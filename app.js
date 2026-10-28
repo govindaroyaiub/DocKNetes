@@ -12,10 +12,11 @@
   const saved = store.get(KEY, null);
   const state = {
     done: (saved && saved.done) || {},
+    seenIntro: !!(saved && saved.seenIntro),
     sim: (saved && saved.sim) || Sim.createState(),
-    view: (saved && saved.view) || { screen: "home" },
+    view: (saved && saved.view && saved.view.screen !== "intro" && saved.view) || { screen: "home" },
   };
-  const save = () => store.set(KEY, { done: state.done, sim: state.sim, view: state.view });
+  const save = () => store.set(KEY, { done: state.done, sim: state.sim, view: state.view, seenIntro: state.seenIntro });
 
   // Keep the address bar clean: no #anchors, ever.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
@@ -102,7 +103,7 @@
         h("h1", {}, "Learn Docker", h("br"), h("span", {}, "by typing.")),
         h("p", { class: "hero-sub" }, "No long reading. Every lesson is a handful of missions in a practice terminal. Type the command, see what real Docker would say, unlock the next one."),
         stop
-          ? h("button", { class: "cta", type: "button", onclick: () => go({ screen: "lesson", mi: stop.mi, li: stop.li }) },
+          ? h("button", { class: "cta", type: "button", onclick: () => startLesson(stop.mi, stop.li) },
               h("span", {}, started ? "Continue" : "Start mission 1"),
               h("small", {}, `${COURSE[stop.mi].title} · ${COURSE[stop.mi].lessons[stop.li].title}`),
               icon.arrow())
@@ -160,6 +161,94 @@
       h("pre", {}, ...lines.map(([p, t], i) => h("span", { class: "hl " + (p === "ok" ? "ok" : p ? "cmd" : "out"), style: `--i:${i}` }, p && p !== "ok" ? h("b", {}, p) : null, t))));
   }
 
+  // ------------------------------------------------------------ INTRO: animated "kitchen in a box" story (modal)
+  // Plays every time lesson 1 of module 1 opens (see renderLesson); module 1 also has a button for it.
+  function startLesson(mi, li) {
+    go({ screen: "lesson", mi, li });
+  }
+
+  const kbox = (cls = "", label = "") => `<div class="kbox ${cls}"><i class="door l"></i><i class="door r"></i>${label ? `<b>${label}</b>` : ""}</div>`;
+  const SCENES = [
+    { tag: "The problem", title: "Your app needs a kitchen",
+      text: "PHP, a database, Node… are its oven, fridge and pots. Installed straight onto your computer, it gets messy fast.",
+      stage: `<span class="a laptop">💻</span>${["🍳", "🧊", "🍲", "🔥", "🥄", "🫙"].map((e, i) => `<span class="a fall f${i}">${e}</span>`).join("")}<span class="a mess">😵‍💫</span>` },
+    { tag: "Module 1", title: "Docker puts it in a box",
+      text: "A <b>container</b> is a kitchen in a box: exactly the tools the app needs, sealed in. Nothing leaks out.",
+      stage: `${["🍳", "🧊", "🍲"].map((e, i) => `<span class="a fly y${i}">${e}</span>`).join("")}${kbox("shut mid", "container")}` },
+    { tag: "Module 1", title: "Doors let you look inside",
+      text: "A <b>port</b> is a little door. <code>-p 8080:80</code> means door 8080 on your computer leads to door 80 in the box.",
+      stage: `${kbox("ajar left", "nginx")}<span class="a beam"></span><div class="a browser"><i></i><span>localhost:8080</span></div><span class="a peek">👀</span>` },
+    { tag: "Module 2", title: "A recipe makes the box",
+      text: "A <b>Dockerfile</b> is the recipe card. Docker cooks it into an <b>image</b>, then stamps out identical boxes anywhere.",
+      stage: `<div class="a card"><p>FROM node:22</p><p>COPY . .</p><p>CMD npm start</p></div><span class="a arrow">➜</span>${kbox("stamp s0")}${kbox("stamp s1")}${kbox("stamp s2")}` },
+    { tag: "Module 3", title: "The toy chest keeps your data",
+      text: "Throw a box away and everything inside is gone. A <b>volume</b> is a toy chest outside the box, so your data survives.",
+      stage: `<span class="a link"></span>${kbox("toss", "db")}<span class="a bin">🗑️</span><div class="a chest">🧸<small>data safe</small></div>` },
+    { tag: "Module 4", title: "One plan, many boxes",
+      text: "<b>Compose</b> is the big plan: web, database, cache. One command sets them all up and lets them talk by name.",
+      stage: `<svg class="a wires" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M40 72 L60 30 L80 72"/></svg><span class="a clip">📋</span>${kbox("trio t0", "web")}${kbox("trio t1", "db")}${kbox("trio t2", "cache")}` },
+    { tag: "Module 5", title: "Ship the same box to a server",
+      text: "Push the image to a <b>registry</b>, and any server pulls the exact same box. Works on your laptop means works there.",
+      stage: `<span class="a road"></span><div class="a server">🖥️<small>my-vps</small></div><div class="a truck">${kbox("ride")}<span>🚚</span></div>` },
+    { tag: "Module 6", title: "The warehouse boss",
+      text: "<b>Kubernetes</b> runs boxes on many machines. One breaks? It throws it out and puts in a fresh one, all by itself.",
+      stage: `<span class="a boss">🏗️</span><div class="a floor">${kbox("w")}<div class="slot">${kbox("w broke")}${kbox("w fresh")}</div>${kbox("w")}</div><span class="a poof">💥</span>` },
+  ];
+
+  function openIntro(onDone) {
+    let i = 0;
+    const stage = h("div", { class: "ki-stage" });
+    const tag = h("span", { class: "ki-tag" });
+    const title = h("h2", {});
+    const text = h("p", {});
+    const copy = h("div", { class: "ki-copy" }, tag, title, text);
+    const dots = h("div", { class: "ki-dots" }, ...SCENES.map((_, n) => h("button", { type: "button", "aria-label": `Scene ${n + 1}`, onclick: () => show(n) })));
+    const back = h("button", { class: "ghost", type: "button", onclick: () => show(i - 1) }, "Back");
+    const next = h("button", { class: "cta small", type: "button", onclick: () => (i === SCENES.length - 1 ? finish() : show(i + 1)) });
+    const replayBtn = h("button", { class: "ki-replay", type: "button", title: "Play this scene again", onclick: () => show(i) }, icon.reset());
+    const panel = h("div", { class: "ki-panel", role: "dialog", "aria-modal": "true", "aria-label": "How Docker works" },
+      stage, replayBtn, copy,
+      h("div", { class: "ki-nav" }, back, dots, next));
+    const overlay = h("div", { class: "ki-overlay" }, panel);
+
+    function show(n) {
+      i = Math.max(0, Math.min(SCENES.length - 1, n));
+      const sc = SCENES[i];
+      stage.className = `ki-stage sc${i}`;
+      stage.innerHTML = sc.stage; // static markup defined above
+      tag.textContent = `${i + 1} / ${SCENES.length} · ${sc.tag}`;
+      title.textContent = sc.title;
+      text.innerHTML = sc.text;
+      back.disabled = i === 0;
+      next.replaceChildren(h("span", {}, i === SCENES.length - 1 ? (onDone ? "Let's type" : "Done") : "Next"), icon.arrow());
+      [...dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
+      copy.classList.remove("in");
+      void copy.offsetWidth;
+      copy.classList.add("in");
+    }
+    function close() {
+      document.removeEventListener("keydown", onKey);
+      document.body.classList.remove("modal-open");
+      overlay.classList.add("out");
+      setTimeout(() => overlay.remove(), 260);
+    }
+    function finish() {
+      state.seenIntro = true;
+      save();
+      close();
+      if (onDone) onDone();
+    }
+    function onKey(e) {
+      if (e.key === "ArrowRight") show(i + 1);
+      else if (e.key === "ArrowLeft") show(i - 1);
+    }
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("modal-open");
+    document.body.append(overlay);
+    show(0);
+    next.focus({ preventScroll: true });
+  }
+
   // ------------------------------------------------------------ MODULE overview (revisit chapters)
   function renderModule() {
     const mi = state.view.mi;
@@ -178,7 +267,7 @@
           h("p", {}, open ? `${n}/${l.missions.length} missions` : "Finish the lesson above to unlock")),
         h("span", { class: `chip s-${status.replace(" ", "-").toLowerCase()}` }, status),
         open
-          ? h("button", { class: done ? "ghost" : "cta small", type: "button", onclick: () => go({ screen: "lesson", mi, li }) },
+          ? h("button", { class: done ? "ghost" : "cta small", type: "button", onclick: () => (done ? go({ screen: "lesson", mi, li }) : startLesson(mi, li)) },
               done ? "Revisit" : h("span", {}, n ? "Continue" : "Start"), done ? null : icon.arrow())
           : h("span", { class: "lgap" }));
     });
@@ -190,7 +279,8 @@
           h("p", { class: "kicker" }, `Module ${mi + 1} · ${m.tag}`),
           h("h1", {}, m.title),
           h("p", { class: "hero-sub" }, m.blurb),
-          h("div", { class: "bar wide" }, h("i", { style: `width:${pct}%` })))),
+          h("div", { class: "bar wide" }, h("i", { style: `width:${pct}%` })),
+          mi === 0 ? h("button", { class: "ghost intro-btn", type: "button", onclick: () => openIntro(null) }, "▶ How Docker works (1 min)") : null)),
       h("ol", { class: "lessons" }, ...rows),
       moduleDone(m) ? h("p", { class: "module-note" }, "Finished lessons stay open. Revisit any of them and replay the missions as practice; your progress is kept.") : null));
   }
@@ -323,18 +413,21 @@
       if (cur === -1) return paintComplete();
       card.classList.remove("complete");
       const ms = l.missions[cur];
+      // First time through: the command is shown (guided). Replaying a finished lesson: hidden behind Hint / Show answer.
+      const guided = !replay;
       const hint = h("p", { class: "hint", hidden: true }, "💡 ", ms.hint);
-      const answer = h("p", { class: "answer", hidden: true }, h("span", {}, "Type this:"), h("code", {}, ms.answer));
-      card.replaceChildren(
+      const answer = h("p", { class: `answer ${guided ? "guided" : ""}`, hidden: !guided }, h("span", {}, "Type this:"), h("code", {}, ms.answer));
+      card.replaceChildren(...[
         h("div", { class: "mission-top" },
           h("span", { class: "mission-label" }, `${replay ? "Replay · " : ""}Mission ${cur + 1}/${l.missions.length}`),
           h("div", { class: "pips" }, ...l.missions.map((_, i) => h("i", { class: isDone(i) ? "on" : i === cur ? "cur" : "" })))),
         h("p", { class: "goal", html: ms.goal }),
-        h("div", { class: "mission-actions" },
+        guided ? answer : null,
+        guided ? null : h("div", { class: "mission-actions" },
           h("button", { class: "ghost", type: "button", onclick: (e) => { hint.hidden = false; e.currentTarget.disabled = true; term.focus(); } }, "Hint"),
           h("button", { class: "ghost", type: "button", onclick: (e) => { hint.hidden = false; answer.hidden = false; e.currentTarget.disabled = true; term.focus(); } }, "Show answer"),
-          replay ? h("button", { class: "ghost push", type: "button", onclick: stopReplay }, "Stop replay") : null),
-        hint, answer);
+          h("button", { class: "ghost push", type: "button", onclick: stopReplay }, "Stop replay")),
+        guided ? null : hint, guided ? null : answer].filter(Boolean));
       if (flash) setTimeout(() => card.classList.remove("flash"), 900);
     }
 
@@ -385,7 +478,8 @@
     term.setHistory(state.sim.history);
     paintCard(false);
     paintMissions();
-    term.focus();
+    if (mi === 0 && li === 0) openIntro(() => term.focus());
+    else term.focus();
   }
 
   // ------------------------------------------------------------ terminal widget

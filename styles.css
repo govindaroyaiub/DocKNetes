@@ -372,6 +372,10 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 /* ----- replay + complete actions */
 .complete-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .complete-actions .ghost { display: inline-flex; align-items: center; gap: 6px; }
+.cta.alt { background: var(--surface); color: var(--ink); border: 1.5px solid var(--ink); box-shadow: 0 6px 0 var(--ink); }
+.cta.alt:hover { box-shadow: 0 8px 0 var(--ink); }
+.cta.alt:active { box-shadow: 0 2px 0 var(--ink); }
+.cta.alt:hover svg { transform: rotate(-90deg); }
 .ghost.push { margin-left: auto; }
 .mission.replaying::before { background: var(--term-note); background-image: repeating-linear-gradient(180deg, transparent 0 6px, rgba(0, 0, 0, .15) 6px 8px); }
 .mission.replaying .mission-label { color: color-mix(in srgb, var(--term-note) 80%, var(--ink)); }

@@ -447,7 +447,7 @@
           h("p", { class: "goal" }, replayed ? "Same commands, second time round. That's how it sticks." : lastLesson ? (lastModule ? "That's everything. You can now run, build, ship and orchestrate containers." : `Nice. “${COURSE[mi + 1].title}” is open.`) : "All missions done. Keep playing in the terminal, or move on."),
           h("div", { class: "complete-actions" },
             h("button", { class: "cta small", type: "button", onclick: () => go(next) }, h("span", {}, label), h("small", {}, small), icon.arrow()),
-            h("button", { class: "ghost", type: "button", onclick: startReplay }, icon.reset(), replayed ? "Replay again" : "Replay missions"),
+            h("button", { class: "cta small alt", type: "button", onclick: startReplay }, h("span", {}, replayed ? "Replay again" : "Replay missions"), h("small", {}, "Practise from memory"), icon.reset()),
             replayed ? h("button", { class: "ghost", type: "button", onclick: stopReplay }, "Back to my sandbox") : null)));
     }
 

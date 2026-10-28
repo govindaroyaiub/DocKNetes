@@ -103,7 +103,7 @@
     const hero = h("section", { class: "hero" },
       h("div", { class: "hero-copy" },
         h("p", { class: "kicker" }, "Docker · Compose · Deploy · Kubernetes"),
-        h("h1", {}, "Learn Docker", h("br"), h("span", {}, "by typing.")),
+        h("h1", { "aria-label": "Learn Docker by typing." }, "Learn Docker", h("br"), typewriter("by typing.")),
         h("p", { class: "hero-sub" }, "No long reading. Every lesson is a handful of missions in a practice terminal. Type the command, see what real Docker would say, unlock the next one."),
         stop
           ? h("button", { class: "cta", type: "button", onclick: () => startLesson(stop.mi, stop.li) },
@@ -151,6 +151,25 @@
       h("h2", { class: "yard-title" }, "Case files", h("span", {}, "Real problems, no instructions. Open any time.")),
       h("div", { class: "case-grid" }, ...CASES.map((c, i) => caseCard(c, i))));
     app.replaceChildren(h("div", { class: "home" }, hero, h("h2", { class: "yard-title" }, "The yard", h("span", {}, "6 modules, unlock them in order")), yard, caseTeaser, foot));
+  }
+
+  // Types the text out one letter at a time behind a blinking caret.
+  function typewriter(text) {
+    const chars = [...text].map((c) => h("span", { class: "tw-ch" }, c));
+    const caret = h("span", { class: "tw-caret" });
+    const el = h("span", { "aria-hidden": "true" }, caret, ...chars);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      chars.forEach((c) => c.classList.add("on"));
+      el.append(caret);
+      return el;
+    }
+    let i = 0;
+    const tick = () => {
+      if (!el.isConnected) return; // left the home screen
+      if (i < chars.length) { chars[i].classList.add("on"); chars[i].after(caret); i++; setTimeout(tick, 70 + Math.random() * 90); }
+    };
+    setTimeout(tick, 500);
+    return el;
   }
 
   function heroTerminal() {

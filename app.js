@@ -664,13 +664,13 @@
               h("button", { class: "cta small", type: "button", onclick: () => go({ screen: "case", id: next.id }) }, h("span", {}, "Next case"), h("small", {}, next.title), icon.arrow()),
               h("button", { class: "cta small alt", type: "button", onclick: () => { cs = freshCase(c, cs); go({ screen: "case", id: c.id }); } }, h("span", {}, "Try again"), h("small", {}, "Fresh broken setup"), icon.reset()))));
       } else {
-        status.replaceChildren(
+        status.replaceChildren(...[
           h("div", { class: "mission-top" },
             h("span", { class: "mission-label" }, h("i", { class: "live-dot" }), `Open · ${c.ticket}`),
             h("button", { class: "ghost", type: "button", onclick: () => { if (confirm("Reset this case to its broken starting point?")) { cs = freshCase(c, cs); go({ screen: "case", id: c.id }); } } }, icon.reset(), "Reset case")),
           h("p", { class: "goal" }, c.title),
           h("p", { class: "case-howto" }, "Investigate and fix it in the terminal. The case is checked after every command."),
-          failMsg ? h("p", { class: "case-fail" }, "⚠️ ", failMsg) : null);
+          failMsg ? h("p", { class: "case-fail" }, "⚠️ ", failMsg) : null].filter(Boolean)); // replaceChildren would print "null"
       }
       if (flash) setTimeout(() => status.classList.remove("flash"), 900);
     }

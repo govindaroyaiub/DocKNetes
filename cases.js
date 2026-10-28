@@ -7,6 +7,8 @@
   const L = (S) => S.hosts.local;
   const up = (S, name) => L(S).containers.find((c) => c.name === name && c.status === "running");
   const hasPort = (c, host, container) => c && c.ports.some((p) => p.host === host && p.container === container);
+  const X = (S) => Sim.linux(S);
+  const APP = "/home/you/app";
 
   window.CASES = [
     {
@@ -166,6 +168,82 @@
       fix: ["kubectl scale deployment shop --replicas=5", "kubectl expose deployment shop --port=80"],
       cause: "One pod can't take 5× traffic and nothing spread the load. Scaling made 5 copies; the Service gave them one stable address that shares traffic between them.",
       refs: [["Scaling a deployment", "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#scaling-a-deployment"], ["Services", "https://kubernetes.io/docs/concepts/services-networking/service/"]],
+    },
+
+    // ---------------------------------------------------------------- Linux
+    {
+      id: "port-in-use",
+      ticket: "INC-1049", priority: "P2", from: "Frontend dev",
+      title: "Port 3000 is already in use",
+      level: "Easy", tags: ["linux", "ss", "kill"],
+      story: "<code>npm start</code> dies with <code>EADDRINUSE: address already in use :::3000</code>. Nothing should be running. Free port <b>3000</b>, but don't touch the system services this laptop needs.",
+      symptoms: ["<code>Error: listen EADDRINUSE :::3000</code>", "<code>curl http://localhost:3000</code> answers, but it's not your app"],
+      setup: (S) => { X(S).dirs.push("/home/you/old-shop"); Sim.spawn(S, { pid: 7312, user: "you", cmd: "node /home/you/old-shop/server.js", name: "node", port: 3000 }); },
+      check: (S) => !X(S).procs.some((p) => p.port === 3000) && X(S).procs.some((p) => p.name === "sshd") && X(S).procs.some((p) => p.name === "dockerd"),
+      fail: (S) => (!X(S).procs.some((p) => p.name === "sshd") ? "You stopped sshd: nobody can log in to this machine any more. Reset the case and only stop what holds port 3000." : !X(S).procs.some((p) => p.name === "dockerd") ? "You stopped dockerd: every container on this machine just died. Reset the case." : null),
+      clues: [
+        "Something is <i>listening</i> on 3000. Which command lists listening ports and the program behind each?",
+        "<code>ss -tlnp</code> (or <code>lsof -i :3000</code>) shows the program and its <b>PID</b>.",
+        "<code>kill</code> that PID. Leave <code>sshd</code> and <code>dockerd</code> alone.",
+      ],
+      fix: ["ss -tlnp", "kill 7312"],
+      cause: "An old dev server from another project (<code>old-shop</code>) was still running in the background and owned port 3000. Only one program can listen on a port, so the new app couldn't start until that process was stopped.",
+      refs: [["ss", "https://man7.org/linux/man-pages/man8/ss.8.html"], ["kill", "https://man7.org/linux/man-pages/man1/kill.1.html"]],
+    },
+    {
+      id: "root-script",
+      ticket: "INC-1050", priority: "P2", from: "Release team",
+      title: "The deploy script says Permission denied",
+      level: "Medium", tags: ["linux", "ls -l", "chmod", "sudo"],
+      story: "Ops copied a new <code>deploy.sh</code> into <code>~/app</code>. Running <code>./deploy.sh</code> fails, and so does the usual <code>chmod +x</code>. Make it runnable and ship.",
+      symptoms: ["<code>./deploy.sh</code>: Permission denied", "<code>chmod +x deploy.sh</code>: Operation not permitted"],
+      setup: (S) => { const L = X(S); L.modes[APP + "/deploy.sh"] = "rw-r--r--"; L.owners[APP + "/deploy.sh"] = "root"; },
+      check: (S) => S.files["deploy.sh"] !== undefined && /x/.test((X(S).modes[APP + "/deploy.sh"] || "")[2]),
+      fail: (S) => (S.files["deploy.sh"] === undefined ? "deploy.sh is gone. Reset the case and fix its permissions instead." : null),
+      clues: [
+        "<code>ls -l deploy.sh</code>: look at the rights, and at <b>who owns it</b>.",
+        "Only a file's owner can change its rights. The owner here is <code>root</code>, so you need admin rights for this one command.",
+        "<code>sudo chmod +x deploy.sh</code>, then run it.",
+      ],
+      fix: ["ls -l deploy.sh", "sudo chmod +x deploy.sh", "./deploy.sh"],
+      cause: "The script was copied in by root and had no execute (<code>x</code>) bit. You can't change the rights of a file you don't own, so it took <code>sudo chmod +x</code>.",
+      refs: [["chmod", "https://man7.org/linux/man-pages/man1/chmod.1.html"], ["File permissions", "https://ubuntu.com/server/docs/security-users"]],
+    },
+    {
+      id: "missing-config",
+      ticket: "INC-1051", priority: "P1", from: "Monitoring alert",
+      title: "The shop dies right after boot",
+      level: "Medium", tags: ["linux", "tail", "sudo", "mkdir -p"],
+      story: "We moved the shop to a new machine. The service starts, then dies a second later, every time. Nobody looked at the logs yet. They are in <code>/var/log</code>.",
+      symptoms: ["Service status: failed", "Worked fine on the old machine"],
+      setup: (S) => { X(S).files["/var/log/shop.log"] = "09:12:01 shop starting (v2.4.1)\n09:12:01 loading plugins... ok\n09:12:02 reading config\n09:12:02 FATAL cannot open config /etc/shop/config.yml: No such file or directory\n09:12:02 shop exited with code 1"; },
+      check: (S) => Sim.linux(S).files["/etc/shop/config.yml"] !== undefined,
+      clues: [
+        "Start at the logs: <code>ls /var/log</code>, then read the end of the shop's log with <code>tail</code>.",
+        "The last lines name a file the app expects. Does its folder even exist? Folders in <code>/etc</code> belong to root.",
+        "<code>sudo mkdir -p /etc/shop</code>, then <code>sudo touch /etc/shop/config.yml</code>.",
+      ],
+      fix: ["tail /var/log/shop.log", "sudo mkdir -p /etc/shop", "sudo touch /etc/shop/config.yml"],
+      cause: "The config file never made it to the new machine. The log said so on its last line. <code>/etc</code> is owned by root, so creating the folder and file needed <code>sudo</code>.",
+      refs: [["tail", "https://man7.org/linux/man-pages/man1/tail.1.html"], ["Where things live: the filesystem", "https://ubuntu.com/tutorials/command-line-for-beginners#4-creating-folders-and-files"]],
+    },
+    {
+      id: "missing-tool",
+      ticket: "INC-1052", priority: "P3", from: "CI bot",
+      title: "Build fails: jq: command not found",
+      level: "Easy", tags: ["linux", "apt", "sudo"],
+      story: "The build server runs <code>./build.sh</code> in <code>~/app</code> on every push. Since it was rebuilt, the script stops halfway. Get the build green again.",
+      symptoms: ["<code>./build.sh: line 3: jq: command not found</code>", "Fresh Ubuntu server"],
+      setup: (S) => { S.files["build.sh"] = '#!/bin/sh\necho "Reading version from package.json..."\njq -r .version package.json\necho "Build OK ✔"'; X(S).modes[APP + "/build.sh"] = "rwxr-xr-x"; },
+      check: (S) => X(S).pkgs.includes("jq"),
+      clues: [
+        "Run <code>./build.sh</code> yourself. Which line fails, and what's missing?",
+        "Missing tools come from the package manager. This is Ubuntu, so it's <code>apt</code>, not <code>apk</code>, and installing needs admin rights.",
+        "<code>sudo apt install jq</code>, then run the build again.",
+      ],
+      fix: ["./build.sh", "sudo apt install jq", "./build.sh"],
+      cause: "The rebuilt server didn't have <code>jq</code>, a small JSON tool the build script uses. Installing it with <code>sudo apt install jq</code> fixed the build. In a Dockerfile you'd add it with <code>RUN apt-get install -y jq</code> (or <code>apk add jq</code> on Alpine).",
+      refs: [["Package management", "https://ubuntu.com/server/docs/package-management"], ["jq", "https://jqlang.github.io/jq/"]],
     },
   ];
 })();

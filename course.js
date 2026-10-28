@@ -9,8 +9,105 @@
   const has = (r, flag) => r.argv.includes(flag);
   const running = (S, name, host = "local") => S.hosts[host].containers.find((c) => c.name === name && c.status === "running");
   const exists = (S, name, host = "local") => S.hosts[host].containers.find((c) => c.name === name);
+  const L = (S) => Sim.linux(S);
+  const flagsOf = (r) => r.argv.slice(1).filter((a) => a.startsWith("-")).join("");
+  const said = (r, text) => r.lines.some((l) => l.t.trim() === text);
+  const STRAY = { pid: 4821, user: "you", cmd: "node server.js", name: "node", port: 3000 };
 
   window.COURSE = [
+    // ================================================================ 0 · optional warm-up, always open
+    {
+      id: "linux",
+      title: "Linux Survival Kit",
+      tag: "Linux",
+      color: "purple",
+      optional: true,
+      blurb: "Just enough terminal to feel at home. Optional, open any time.",
+      lessons: [
+        {
+          id: "navigate",
+          title: "Find your way",
+          read: "Everything lives in <b>folders</b> (directories). You are always <i>in</i> one of them. <code>~</code> is your home folder, <code>..</code> is one folder up, and files starting with a dot are <b>hidden</b>.",
+          terms: [["pwd", "where am I?"], ["ls -la", "everything here"], ["cd", "move"]],
+          docs: [["The Linux command line for beginners", "https://ubuntu.com/tutorials/command-line-for-beginners"]],
+          setup: (S) => Sim.cdApp(S),
+          missions: [
+            { goal: "Where are you? Print the current folder.", hint: "print working directory", answer: "pwd",
+              check: (r) => cmdIs(r, "pwd") },
+            { goal: "List <b>everything</b> here, hidden files too, with details.", hint: "ls with two flags: l for long, a for all", answer: "ls -la",
+              check: (r) => r.ok && r.argv[0] === "ls" && /l/.test(flagsOf(r)) && /a/.test(flagsOf(r)) },
+            { goal: "Read the hidden settings file <code>.env</code>.", hint: "cat FILE", answer: "cat .env",
+              check: (r) => r.ok && r.argv[0] === "cat" && r.argv.some((a) => /(^|\/)\.env$/.test(a)) },
+            { goal: "Go up one folder, to your home.", hint: "cd and two dots", answer: "cd ..",
+              check: (r, S) => r.ok && L(S).cwd === "/home/you" },
+            { goal: "Make a folder called <code>notes</code> in your home.", hint: "make directory", answer: "mkdir notes",
+              check: (r, S) => L(S).dirs.includes("/home/you/notes") },
+          ],
+        },
+        {
+          id: "permissions",
+          title: "Who can do what",
+          read: "Every file has an owner and three sets of rights: <b>owner</b>, <b>group</b>, <b>everyone</b>. <code>r</code> read, <code>w</code> write, <code>x</code> run. <code>sudo</code> runs one command as the admin, <b>root</b>.",
+          terms: [["-rwxr-xr-x", "owner · group · everyone"], ["chmod +x", "make it runnable"], ["sudo", "do it as admin"]],
+          docs: [["chmod explained", "https://man7.org/linux/man-pages/man1/chmod.1.html"], ["sudo", "https://ubuntu.com/server/docs/user-management"]],
+          setup: (S) => Sim.cdApp(S),
+          missions: [
+            { goal: "Who are you logged in as?", hint: "who am i, as one word", answer: "whoami",
+              check: (r) => cmdIs(r, "whoami") },
+            { goal: "Look at the rights on <code>deploy.sh</code>.", hint: "ls -l FILE", answer: "ls -l deploy.sh",
+              check: (r) => r.ok && r.argv[0] === "ls" && /l/.test(flagsOf(r)) && r.argv.some((a) => a.endsWith("deploy.sh")) },
+            { goal: "Run it: <code>./deploy.sh</code>. It will refuse. Read why.", hint: "./ means \"the file here\"", answer: "./deploy.sh",
+              check: (r) => /(^|\/)deploy\.sh$/.test(r.argv[0] || "") },
+            { goal: "Give it permission to run.", hint: "chmod +x FILE", answer: "chmod +x deploy.sh",
+              check: (r, S) => /x/.test((L(S).modes["/home/you/app/deploy.sh"] || "")[2]) },
+            { goal: "Run it again.", hint: "same as before", answer: "./deploy.sh",
+              check: (r) => r.ok && said(r, "Deployed! 🚀") },
+            { goal: "Read <code>/etc/shadow</code> (the password file). Only root may, so ask for admin rights.", hint: "put sudo in front of the command", answer: "sudo cat /etc/shadow",
+              check: (r) => r.ok && r.argv[0] === "sudo" && r.argv.includes("/etc/shadow") },
+          ],
+        },
+        {
+          id: "processes",
+          title: "Processes and ports",
+          read: "Every running program is a <b>process</b> with a number, its <b>PID</b>. A server <b>listens</b> on a port, and two can't share one: that is the classic <i>\"port already in use\"</i>.",
+          terms: [["ps aux", "all processes"], ["ss -tlnp", "who listens where"], ["kill PID", "stop one"]],
+          docs: [["ps", "https://man7.org/linux/man-pages/man1/ps.1.html"], ["ss", "https://man7.org/linux/man-pages/man8/ss.8.html"]],
+          setup: (S) => { Sim.cdApp(S); Sim.spawn(S, Object.assign({}, STRAY)); },
+          missions: [
+            { goal: "List every running process and pick out <code>node</code>.", hint: "ps aux, then | grep WORD keeps matching lines", answer: "ps aux | grep node",
+              check: (r) => r.ok && r.argv[0] === "ps" },
+            { goal: "Your app won't start: port <b>3000</b> is taken. Find who is listening on it.", hint: "ss -tlnp (or lsof -i :3000)", answer: "ss -tlnp",
+              check: (r) => r.ok && ["ss", "netstat", "lsof"].includes(r.argv[0]) },
+            { goal: "Stop that process with <code>kill</code> and its PID.", hint: "kill PID (the number from the last command)", answer: "kill 4821",
+              check: (r, S) => !L(S).procs.some((p) => p.port === 3000) },
+            { goal: "Check that port 3000 is free now.", hint: "curl http://localhost:PORT should fail to connect", answer: "curl http://localhost:3000",
+              check: (r, S) => r.argv[0] === "curl" && /3000/.test(r.line) && !L(S).procs.some((p) => p.port === 3000) },
+          ],
+        },
+        {
+          id: "settings",
+          title: "Settings and packages",
+          read: "<b>Environment variables</b> are settings handed to programs: <code>PORT</code>, <code>DATABASE_URL</code>, <code>NODE_ENV</code>... Containers get theirs with <code>-e</code>. New tools come from a <b>package manager</b>: <code>apt</code> on Ubuntu and Debian, <code>apk</code> on Alpine (common in Docker images).",
+          terms: [["export K=V", "set a variable"], ["$K", "use it"], ["apt install", "add a tool"]],
+          docs: [["Environment variables", "https://help.ubuntu.com/community/EnvironmentVariables"], ["Package management", "https://ubuntu.com/server/docs/package-management"]],
+          setup: (S) => Sim.cdApp(S),
+          missions: [
+            { goal: "Set <code>PORT</code> to <b>8080</b> for this terminal.", hint: "export NAME=VALUE (no spaces around =)", answer: "export PORT=8080",
+              check: (r, S) => L(S).env.PORT === "8080" },
+            { goal: "Print it.", hint: "echo $NAME", answer: "echo $PORT",
+              check: (r) => r.ok && r.argv[0] === "echo" && said(r, "8080") },
+            { goal: "List all variables. Spot <code>PORT</code> among them.", hint: "env", answer: "env",
+              check: (r) => r.ok && ["env", "printenv", "export"].includes(r.argv[0]) && r.argv.length === 1 },
+            { goal: "Try the <code>tree</code> command. It isn't installed yet.", hint: "just type tree", answer: "tree",
+              check: (r) => r.argv[0] === "tree" },
+            { goal: "Install it. Installing needs admin rights.", hint: "sudo apt install NAME", answer: "sudo apt install tree",
+              check: (r, S) => L(S).pkgs.includes("tree") },
+            { goal: "Run <code>tree</code> again.", hint: "tree", answer: "tree",
+              check: (r, S) => r.ok && r.argv[0] === "tree" && L(S).pkgs.includes("tree") },
+          ],
+        },
+      ],
+    },
     // ================================================================ 1
     {
       id: "basics",

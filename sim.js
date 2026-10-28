@@ -167,7 +167,7 @@ volumes:
     };
   }
   function createState() {
-    return {
+    const S = {
       host: "local",
       hosts: { local: newEngine(true), vps: newEngine(false) },
       files: Object.assign({}, FILES),
@@ -177,6 +177,8 @@ volumes:
       k8s: null,
       history: [],
     };
+    linux(S);
+    return S;
   }
 
   const engine = (S) => S.hosts[S.host];
@@ -1172,28 +1174,387 @@ To generate this message, Docker took the following steps:
     }
   }
 
+  // ---------------------------------------------------------------- linux (laptop only)
+  // A small filesystem, processes, environment and packages. Files directly in ~/app live in
+  // S.files so docker build / compose see them; everything else lives in S.linux.
+  const HOME = "/home/you", APP = HOME + "/app";
+  const APP_EXTRA = {
+    ".env": "PORT=3000\nNODE_ENV=development\nDATABASE_URL=postgres://db:5432/app",
+    "deploy.sh": `#!/bin/sh\necho "Building image..."\necho "Pushing to the registry..."\necho "Deployed! 🚀"`,
+  };
+  const PKGS = { tree: "2.1.1-2", htop: "3.3.0-4", git: "1:2.43.0-1", jq: "1.7.1-3", curl: "8.5.0-2", vim: "2:9.1.0016-1", nano: "7.2-2", python3: "3.12.3-0", nodejs: "18.19.1+dfsg-6" };
+  const BUILTIN_CMDS = ["ls", "cd", "pwd", "cat", "echo", "mkdir", "touch", "rm", "cp", "mv", "chmod", "whoami", "id", "ps", "kill", "ss", "lsof", "env", "printenv", "export", "unset", "apt", "sudo", "head", "tail", "hostname", "uname", "which", "curl", "ssh", "docker", "kubectl", "kind"];
+
+  function linux(S) {
+    if (S.linux) return S.linux;
+    for (const [n, c] of Object.entries(APP_EXTRA)) if (S.files[n] === undefined) S.files[n] = c;
+    S.linux = {
+      cwd: APP, prev: APP,
+      dirs: ["/", "/home", HOME, APP, "/etc", "/tmp", "/usr", "/usr/bin", "/var", "/var/log"],
+      files: {
+        "/etc/os-release": 'PRETTY_NAME="Ubuntu 24.04.1 LTS"\nNAME="Ubuntu"\nVERSION_ID="24.04"\nID=ubuntu',
+        "/etc/hostname": "laptop",
+        "/etc/shadow": "root:*:19800:0:99999:7:::\nyou:$y$j9T$Qm1x0Vz8$kq3V0w7m1M3n2qXxYkq9P0:19800:0:99999:7:::",
+        "/var/log/app.log": "10:00:01 app starting\n10:00:02 connected to database\n10:00:02 listening on port 3000\n10:04:51 GET / 200\n10:04:53 GET /favicon.ico 404",
+        [HOME + "/todo.txt"]: "- learn the terminal\n- learn docker\n- ship it",
+      },
+      modes: { "/etc/shadow": "rw-r-----", [APP + "/deploy.sh"]: "rw-r--r--" },
+      owners: {},
+      env: { HOME, USER: "you", SHELL: "/bin/bash", PWD: APP, PATH: "/usr/local/bin:/usr/bin:/bin", LANG: "en_US.UTF-8" },
+      procs: [
+        { pid: 1, user: "root", cmd: "/sbin/init splash", name: "systemd" },
+        { pid: 412, user: "root", cmd: "sshd: /usr/sbin/sshd -D", name: "sshd", port: 22 },
+        { pid: 688, user: "root", cmd: "/usr/bin/dockerd -H fd://", name: "dockerd" },
+        { pid: 2207, user: "you", cmd: "-bash", name: "bash" },
+      ],
+      pkgs: [],
+    };
+    return S.linux;
+  }
+  const parentOf = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+  const baseOf = (p) => p.slice(p.lastIndexOf("/") + 1);
+  function resolvePath(L, p) {
+    if (!p || p === "~") return HOME;
+    if (p.startsWith("~/")) p = HOME + p.slice(1);
+    else if (!p.startsWith("/")) p = L.cwd + "/" + p;
+    const out = [];
+    for (const seg of p.split("/")) { if (!seg || seg === ".") continue; if (seg === "..") out.pop(); else out.push(seg); }
+    return "/" + out.join("/");
+  }
+  const fileGet = (S, p) => (parentOf(p) === APP ? S.files[baseOf(p)] : linux(S).files[p]);
+  function fileSet(S, p, content) { if (parentOf(p) === APP) S.files[baseOf(p)] = content; else linux(S).files[p] = content; }
+  function fileDel(S, p) { if (parentOf(p) === APP) delete S.files[baseOf(p)]; else delete linux(S).files[p]; delete linux(S).modes[p]; }
+  const isDir = (S, p) => linux(S).dirs.includes(p);
+  const exists = (S, p) => isDir(S, p) || fileGet(S, p) !== undefined;
+  const ownerOf = (S, p) => (linux(S).owners || {})[p] || (p === HOME || p.startsWith(HOME + "/") ? "you" : "root");
+  const modeOf = (S, p) => linux(S).modes[p] || (isDir(S, p) ? (p === "/tmp" ? "rwxrwxrwt" : "rwxr-xr-x") : "rw-r--r--");
+  const writable = (S, p) => asRoot || p === "/tmp" || p.startsWith("/tmp/") || ownerOf(S, p) === "you";
+  function children(S, dir) {
+    const L = linux(S);
+    const names = L.dirs.filter((d) => d !== dir && parentOf(d) === dir).map(baseOf);
+    if (dir === APP) names.push(...Object.keys(S.files));
+    names.push(...Object.keys(L.files).filter((f) => parentOf(f) === dir).map(baseOf));
+    return [...new Set(names)].sort((a, b) => a.replace(/^\./, "").localeCompare(b.replace(/^\./, "")));
+  }
+  const tilde = (p) => (p === HOME ? "~" : p.startsWith(HOME + "/") ? "~" + p.slice(HOME.length) : p);
+
+  let asRoot = false; // true while a "sudo ..." command runs
+
+  function lsCmd(S, args, o) {
+    const L = linux(S);
+    const flags = args.filter((a) => a.startsWith("-")).join("");
+    const long = flags.includes("l"), all = flags.includes("a");
+    const targets = args.filter((a) => !a.startsWith("-"));
+    const one = (p, shown) => {
+      const dir = isDir(S, p), body = dir ? "" : fileGet(S, p) || "";
+      return `${dir ? "d" : "-"}${modeOf(S, p)} ${dir ? 2 : 1} ${ownerOf(S, p)} ${ownerOf(S, p)} ${String(dir ? 4096 : body.length).padStart(5)} Oct 28 10:00 ${shown}`;
+    };
+    for (const t of targets.length ? targets : ["."]) {
+      const p = resolvePath(L, t);
+      if (!exists(S, p)) { o.err(`ls: cannot access '${t}': No such file or directory`); continue; }
+      if (!isDir(S, p)) { o.say(long ? one(p, t) : t); continue; }
+      let names = children(S, p).filter((n) => all || !n.startsWith("."));
+      if (all) names = [".", "..", ...names];
+      if (!names.length) continue;
+      if (!long) { o.say(names.join("   ")); continue; }
+      o.say(`total ${names.length * 4}`);
+      for (const n of names) o.say(one(n === "." ? p : n === ".." ? parentOf(p) : p === "/" ? "/" + n : p + "/" + n, n));
+    }
+  }
+  function catCmd(S, args, o, max) {
+    const L = linux(S);
+    const files = args.filter((a) => !a.startsWith("-"));
+    if (!files.length) return o.err(`${max ? max.cmd : "cat"}: missing file operand`);
+    for (const f of files) {
+      const p = resolvePath(L, f);
+      if (isDir(S, p)) { o.err(`${max ? max.cmd : "cat"}: ${f}: Is a directory`); continue; }
+      const body = fileGet(S, p);
+      if (body === undefined) { o.err(`${max ? max.cmd : "cat"}: ${f}: No such file or directory`); continue; }
+      if (!asRoot && !modeOf(S, p).slice(6).includes("r") && ownerOf(S, p) !== "you") { o.err(`${max ? max.cmd : "cat"}: ${f}: Permission denied`); continue; }
+      const lines = body.split("\n");
+      o.say(!max ? body : (max.cmd === "head" ? lines.slice(0, max.n) : lines.slice(-max.n)).join("\n"));
+    }
+  }
+  function chmodCmd(S, args, o) {
+    const L = linux(S);
+    const [mode, ...files] = args;
+    if (!mode || !files.length) return o.err(`chmod: missing operand\nTry: chmod +x FILE`);
+    for (const f of files) {
+      const p = resolvePath(L, f);
+      if (!exists(S, p)) { o.err(`chmod: cannot access '${f}': No such file or directory`); continue; }
+      if (!asRoot && ownerOf(S, p) !== "you") { o.err(`chmod: changing permissions of '${f}': Operation not permitted`); continue; }
+      let bits = modeOf(S, p).split("");
+      if (/^[0-7]{3}$/.test(mode)) {
+        bits = mode.split("").flatMap((d) => [(d & 4 ? "r" : "-"), (d & 2 ? "w" : "-"), (d & 1 ? "x" : "-")]);
+      } else {
+        const m = mode.match(/^([ugoa]*)([+-=])([rwx]+)$/);
+        if (!m) { o.err(`chmod: invalid mode: '${mode}'`); return; }
+        const who = (m[1] || "a").replace("a", "ugo");
+        for (const w of who) {
+          const base = { u: 0, g: 3, o: 6 }[w];
+          ["r", "w", "x"].forEach((perm, k) => {
+            if (m[2] === "=") bits[base + k] = m[3].includes(perm) ? perm : "-";
+            else if (m[3].includes(perm)) bits[base + k] = m[2] === "+" ? perm : "-";
+          });
+        }
+      }
+      L.modes[p] = bits.join("");
+    }
+  }
+  function runScript(S, path, viaShell, o) {
+    const L = linux(S);
+    const p = resolvePath(L, path);
+    const body = fileGet(S, p);
+    if (body === undefined) return o.err(`bash: ${path}: No such file or directory`);
+    if (!viaShell && !modeOf(S, p)[2].includes("x")) return o.err(`bash: ${path}: Permission denied`).note(`(the file has no x (execute) permission. Check with ls -l)`);
+    body.split("\n").some((line, i) => {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) return false;
+      const m = t.match(/^echo\s+["']?(.*?)["']?$/);
+      if (m) { o.say(m[1]); return false; }
+      const inner = Out();
+      shell(S, t, inner);
+      inner.lines.forEach((l) => o.lines.push(l.c === "err" ? { t: `${path}: line ${i + 1}: ${l.t.replace(/^bash: /, "")}`, c: "err" } : l));
+      if (!inner.ok) o.ok = false;
+      return !inner.ok;
+    });
+  }
+  function procTable(S) {
+    const L = linux(S);
+    const docker = S.hosts.local.containers.filter((c) => c.status === "running").flatMap((c) => c.ports.map((p, i) => ({ pid: 9100 + i + c.id.charCodeAt(0), user: "root", cmd: `/usr/bin/docker-proxy -host-port ${p.host} -container-port ${p.container}`, name: "docker-proxy", port: p.host })));
+    return [...L.procs, ...docker];
+  }
+  function psCmd(S, o) {
+    const rows = procTable(S).map((p) => [p.user, String(p.pid), (p.name === "node" ? "2.1" : "0.0"), (p.name === "dockerd" ? "1.4" : "0.3"), p.cmd]);
+    o.say(table([["USER", "PID", "%CPU", "%MEM", "COMMAND"], ...rows], 4));
+  }
+  function ssCmd(S, o) {
+    const rows = procTable(S).filter((p) => p.port).map((p) => ["LISTEN", "0", "4096", `0.0.0.0:${p.port}`, "0.0.0.0:*", asRoot || p.user === "you" ? `users:(("${p.name}",pid=${p.pid},fd=18))` : ""]);
+    o.say(table([["State", "Recv-Q", "Send-Q", "Local Address:Port", "Peer Address:Port", "Process"], ...rows], 2));
+    if (!asRoot && rows.some((r) => !r[5])) o.note("(processes owned by root are hidden. Use sudo to see them)");
+  }
+  function lsofCmd(S, args, o) {
+    const m = args.join(" ").match(/:(\d+)/);
+    const list = procTable(S).filter((p) => p.port && (!m || p.port === +m[1]) && (asRoot || p.user === "you"));
+    if (!list.length) { o.ok = false; return; } // real lsof: prints nothing, exit 1
+    o.say(table([["COMMAND", "PID", "USER", "FD", "TYPE", "NODE", "NAME"], ...list.map((p) => [p.name, String(p.pid), p.user, "18u", "IPv4", "TCP", `*:${p.port} (LISTEN)`])], 2));
+  }
+  function killCmd(S, args, o) {
+    const L = linux(S);
+    const pids = args.filter((a) => /^\d+$/.test(a));
+    if (!pids.length) return o.err("kill: usage: kill [-s sigspec | -n signum | -sigspec] pid");
+    for (const id of pids) {
+      const p = L.procs.find((x) => x.pid === +id);
+      if (!p) { o.err(`bash: kill: (${id}) - No such process`); continue; }
+      if (p.user !== "you" && !asRoot) { o.err(`bash: kill: (${id}) - Operation not permitted`); continue; }
+      if (p.pid === 1 || p.name === "bash") { o.note(`(the simulator won't let you kill ${p.name}: that would end your session)`); continue; }
+      L.procs = L.procs.filter((x) => x !== p);
+    }
+  }
+  function aptCmd(S, args, o) {
+    const L = linux(S);
+    const [sub, ...rest] = args.filter((a) => a !== "-y");
+    if (sub === "update") {
+      if (!asRoot) return o.say("Reading package lists... Done").err("E: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)\nE: Unable to lock directory /var/lib/apt/lists/");
+      return o.say("Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\nGet:2 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]\nFetched 126 kB in 1s (148 kB/s)\nReading package lists... Done\nAll packages are up to date.");
+    }
+    if (sub === "install") {
+      if (!rest.length) return o.err("E: No packages given. Try: sudo apt install tree");
+      if (!asRoot) return o.err("E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)\nE: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), are you root?");
+      const bad = rest.find((n) => !PKGS[n]);
+      if (bad) return o.say("Reading package lists... Done\nBuilding dependency tree... Done").err(`E: Unable to locate package ${bad}`);
+      const fresh = rest.filter((n) => !L.pkgs.includes(n));
+      o.say("Reading package lists... Done\nBuilding dependency tree... Done\nReading state information... Done");
+      rest.filter((n) => L.pkgs.includes(n)).forEach((n) => o.say(`${n} is already the newest version (${PKGS[n]}).`));
+      if (fresh.length) {
+        o.say(`The following NEW packages will be installed:\n  ${fresh.join(" ")}\n0 upgraded, ${fresh.length} newly installed, 0 to remove and 0 not upgraded.`);
+        fresh.forEach((n) => o.dim(`Get:1 http://archive.ubuntu.com/ubuntu noble/universe amd64 ${n} amd64 ${PKGS[n]} [47.9 kB]`));
+        fresh.forEach((n) => o.dim(`Setting up ${n} (${PKGS[n]}) ...`));
+        L.pkgs.push(...fresh);
+      }
+      return;
+    }
+    if (sub === "remove") {
+      if (!asRoot) return o.err("E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)\nE: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), are you root?");
+      rest.forEach((n) => { L.pkgs = L.pkgs.filter((x) => x !== n); o.say(`Removing ${n} ...`); });
+      return;
+    }
+    if (sub === "list") return o.say(L.pkgs.map((n) => `${n}/noble,now ${PKGS[n]} amd64 [installed]`).join("\n") || "Listing... Done");
+    o.say("apt 2.7.14 (amd64)\nUsage: apt [options] command\n\nMost used commands:\n  update   - refresh the list of available packages\n  install  - install packages\n  remove   - remove packages\n  list     - list packages");
+  }
+  function treeCmd(S, args, o) {
+    const L = linux(S);
+    const root = resolvePath(L, args.find((a) => !a.startsWith("-")) || ".");
+    if (!isDir(S, root)) return o.err(`${args[0]} [error opening dir]`);
+    const out = [args.find((a) => !a.startsWith("-")) || "."];
+    let dirs = 0, files = 0;
+    const walk = (p, pre, depth) => {
+      const kids = children(S, p).filter((n) => !n.startsWith("."));
+      kids.forEach((n, i) => {
+        const last = i === kids.length - 1, full = p === "/" ? "/" + n : p + "/" + n;
+        out.push(`${pre}${last ? "└── " : "├── "}${n}`);
+        if (isDir(S, full)) { dirs++; if (depth < 2) walk(full, pre + (last ? "    " : "│   "), depth + 1); } else files++;
+      });
+    };
+    walk(root, "", 1);
+    o.say(out.join("\n") + `\n\n${dirs} director${dirs === 1 ? "y" : "ies"}, ${files} file${files === 1 ? "" : "s"}`);
+  }
+
   // ---------------------------------------------------------------- shell
   function shell(S, line, o) {
+    if (S.host === "local") {
+      const env = linux(S).env;
+      line = line.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (_, k) => env[k] ?? "");
+    }
     const argv = tokenize(line);
     const [cmd, ...args] = argv;
-    const files = S.host === "local" ? S.files : {};
+    const local = S.host === "local";
+    const L = local ? linux(S) : null;
+    if (local && cmd && /^(\.{0,2}\/|~\/)/.test(cmd) && !["cd"].includes(cmd)) return runScript(S, cmd, false, o);
     switch (cmd) {
       case "docker": return docker(S, args, o);
       case "kubectl": case "k": return kubectl(S, args, o);
-      case "kind": return S.host === "local" ? kind(S, args, o) : o.err("kind: command not found");
-      case "ls": {
-        const names = Object.keys(files);
-        return o.say(names.length ? (args.includes("-la") || args.includes("-l") ? names.map((n) => `-rw-r--r-- 1 you you ${String(files[n].length).padStart(5)} Oct 28 10:00 ${n}`).join("\n") : names.join("   ")) : "");
+      case "kind": return local ? kind(S, args, o) : o.err("kind: command not found");
+      case "ls": return local ? lsCmd(S, args, o) : undefined;
+      case "cat": return local ? catCmd(S, args, o) : o.err(`cat: ${args[0] || ""}: No such file or directory`);
+      case "head": case "tail": {
+        if (!local) return o.err(`${cmd}: cannot open '${args[0] || ""}' for reading: No such file or directory`);
+        const n = args.includes("-n") ? parseInt(args[args.indexOf("-n") + 1], 10) || 10 : (args.find((a) => /^-\d+$/.test(a)) ? +args.find((a) => /^-\d+$/.test(a)).slice(1) : 10);
+        catCmd(S, args.filter((a, i) => a !== "-n" && args[i - 1] !== "-n" && !/^-/.test(a)), o, { cmd, n });
+        if (cmd === "tail" && args.includes("-f")) o.note("(following new lines... in real life press Ctrl+C to stop)");
+        return;
       }
-      case "cat": {
-        if (!args[0]) return o.err("cat: missing file operand");
-        if (files[args[0]] === undefined) return o.err(`cat: ${args[0]}: No such file or directory`);
-        return o.say(files[args[0]]);
+      case "pwd": return o.say(local ? L.cwd : "/home/deploy");
+      case "whoami": return o.say(asRoot ? "root" : local ? "you" : "deploy");
+      case "id": return o.say(asRoot ? "uid=0(root) gid=0(root) groups=0(root)" : local ? "uid=1000(you) gid=1000(you) groups=1000(you),27(sudo),984(docker)" : "uid=1001(deploy) gid=1001(deploy) groups=1001(deploy),27(sudo)");
+      case "hostname": return o.say(local ? "laptop" : "my-vps");
+      case "uname": return o.say(args.includes("-a") ? `Linux ${local ? "laptop" : "my-vps"} 6.8.0-45-generic #45-Ubuntu SMP x86_64 GNU/Linux` : "Linux");
+      case "echo": {
+        const r = args.findIndex((a) => a === ">" || a === ">>");
+        if (r === -1 || !local) return o.say(args.join(" "));
+        const text = args.slice(0, r).join(" "), target = args[r + 1];
+        if (!target) return o.err("bash: syntax error near unexpected token `newline'");
+        const p = resolvePath(L, target);
+        if (isDir(S, p)) return o.err(`bash: ${target}: Is a directory`);
+        if (!isDir(S, parentOf(p))) return o.err(`bash: ${target}: No such file or directory`);
+        if (!writable(S, exists(S, p) ? p : parentOf(p))) return o.err(`bash: ${target}: Permission denied`);
+        const old = fileGet(S, p);
+        return fileSet(S, p, args[r] === ">>" && old ? old + "\n" + text : text);
       }
-      case "pwd": return o.say(S.host === "local" ? "/home/you/app" : "/home/deploy");
-      case "whoami": return o.say(S.host === "local" ? "you" : "deploy");
-      case "echo": return o.say(args.join(" "));
-      case "cd": return args[0] && !["~", ".", "..", "app", "~/app"].includes(args[0]) ? o.err(`cd: ${args[0]}: No such file or directory`) : undefined;
+      case "cd": {
+        if (!local) return args[0] && !["~", ".", ".."].includes(args[0]) ? o.err(`cd: ${args[0]}: No such file or directory`) : undefined;
+        const target = args[0] === "-" ? L.prev : resolvePath(L, args[0]);
+        if (!exists(S, target)) return o.err(`bash: cd: ${args[0]}: No such file or directory`);
+        if (!isDir(S, target)) return o.err(`bash: cd: ${args[0]}: Not a directory`);
+        if (args[0] === "-") o.say(target);
+        L.prev = L.cwd; L.cwd = target; L.env.PWD = target;
+        return;
+      }
+      case "mkdir": {
+        if (!local) return;
+        const parents = args.includes("-p");
+        const names = args.filter((a) => !a.startsWith("-"));
+        if (!names.length) return o.err("mkdir: missing operand");
+        for (const n of names) {
+          const p = resolvePath(L, n);
+          if (exists(S, p)) { if (!parents) o.err(`mkdir: cannot create directory '${n}': File exists`); continue; }
+          const chain = [];
+          for (let q = p; !exists(S, q); q = parentOf(q)) chain.unshift(q);
+          if (chain.length > 1 && !parents) { o.err(`mkdir: cannot create directory '${n}': No such file or directory`); continue; }
+          if (!writable(S, parentOf(chain[0]))) { o.err(`mkdir: cannot create directory '${n}': Permission denied`); continue; }
+          L.dirs.push(...chain);
+        }
+        return;
+      }
+      case "touch": {
+        if (!local) return;
+        for (const n of args.filter((a) => !a.startsWith("-"))) {
+          const p = resolvePath(L, n);
+          if (exists(S, p)) continue;
+          if (!isDir(S, parentOf(p))) { o.err(`touch: cannot touch '${n}': No such file or directory`); continue; }
+          if (!writable(S, parentOf(p))) { o.err(`touch: cannot touch '${n}': Permission denied`); continue; }
+          fileSet(S, p, "");
+        }
+        return;
+      }
+      case "rm": {
+        if (!local) return;
+        const flags = args.filter((a) => a.startsWith("-")).join("");
+        const rec = /r|R/.test(flags), force = flags.includes("f");
+        const names = args.filter((a) => !a.startsWith("-"));
+        if (!names.length) return o.err("rm: missing operand");
+        for (const n of names) {
+          const p = resolvePath(L, n);
+          if (p === "/" || p === HOME) { o.err(`rm: it is dangerous to operate recursively on '${n}'\nrm: use --no-preserve-root to override this failsafe`).note("(the simulator is not letting you do that one 😅)"); continue; }
+          if (!exists(S, p)) { if (!force) o.err(`rm: cannot remove '${n}': No such file or directory`); continue; }
+          if (!writable(S, parentOf(p))) { o.err(`rm: cannot remove '${n}': Permission denied`); continue; }
+          if (isDir(S, p)) {
+            if (!rec) { o.err(`rm: cannot remove '${n}': Is a directory`); continue; }
+            if (p === APP) { o.err(`rm: refusing to remove '${n}': the course needs this folder`).note("(in real life this would be gone for good)"); continue; }
+            L.dirs = L.dirs.filter((d) => d !== p && !d.startsWith(p + "/"));
+            Object.keys(L.files).filter((f) => f.startsWith(p + "/")).forEach((f) => delete L.files[f]);
+          } else fileDel(S, p);
+        }
+        return;
+      }
+      case "cp": case "mv": {
+        if (!local) return;
+        const [a, b] = args.filter((x) => !x.startsWith("-"));
+        if (!a || !b) return o.err(`${cmd}: missing file operand`);
+        const src = resolvePath(L, a);
+        let dst = resolvePath(L, b);
+        if (!exists(S, src)) return o.err(`${cmd}: cannot stat '${a}': No such file or directory`);
+        if (isDir(S, src)) return o.err(`${cmd}: -r not specified; omitting directory '${a}'`).note("(the simulator copies and moves files only)");
+        if (isDir(S, dst)) dst = dst + "/" + baseOf(src);
+        if (!isDir(S, parentOf(dst))) return o.err(`${cmd}: cannot create regular file '${b}': No such file or directory`);
+        if (!writable(S, parentOf(dst))) return o.err(`${cmd}: cannot create regular file '${b}': Permission denied`);
+        fileSet(S, dst, fileGet(S, src));
+        if (L.modes[src]) L.modes[dst] = L.modes[src];
+        if (cmd === "mv") fileDel(S, src);
+        return;
+      }
+      case "chmod": return local ? chmodCmd(S, args, o) : undefined;
+      case "sh": case "bash": return local && args[0] ? runScript(S, args[0], true, o) : o.note("(you are already in a shell)");
+      case "ps": return local ? psCmd(S, o) : o.say("    PID TTY          TIME CMD\n   1201 pts/0    00:00:00 bash");
+      case "kill": return local ? killCmd(S, args, o) : o.err("bash: kill: no such process");
+      case "ss": case "netstat": return local ? ssCmd(S, o) : undefined;
+      case "lsof": return local ? lsofCmd(S, args, o) : undefined;
+      case "env": case "printenv": {
+        if (!local) return o.say("USER=deploy\nHOME=/home/deploy\nSHELL=/bin/bash");
+        if (args[0]) return L.env[args[0]] !== undefined ? o.say(L.env[args[0]]) : (o.ok = false);
+        return o.say(Object.entries(L.env).map(([k, v]) => `${k}=${v}`).join("\n"));
+      }
+      case "export": {
+        if (!local) return;
+        if (!args.length) return o.say(Object.entries(L.env).map(([k, v]) => `declare -x ${k}="${v}"`).join("\n"));
+        for (const a of args) {
+          const m = a.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$/);
+          if (!m) { o.err(`bash: export: \`${a}': not a valid identifier`); continue; }
+          if (m[2] !== undefined) L.env[m[1]] = m[2];
+          else if (L.env[m[1]] === undefined) L.env[m[1]] = "";
+        }
+        return;
+      }
+      case "unset": if (local) args.forEach((k) => delete L.env[k]); return;
+      case "apt": case "apt-get": return local ? aptCmd(S, args, o) : o.err("E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)");
+      case "apk": return o.err("bash: apk: command not found").note("(apk is the package manager of Alpine Linux, which many Docker images use. This machine is Ubuntu: use apt)");
+      case "tree": return local && L.pkgs.includes("tree") ? treeCmd(S, args, o) : o.err(`Command 'tree' not found, but can be installed with:\nsudo apt install tree`);
+      case "jq": {
+        if (!(local && L.pkgs.includes("jq"))) return o.err("bash: jq: command not found");
+        const file = args.filter((a) => !a.startsWith("-")).pop(), key = (args.find((a) => /^\.\w+/.test(a)) || "").slice(1);
+        const body = file && fileGet(S, resolvePath(L, file));
+        if (body === undefined) return o.err(`jq: error: Could not open ${file}: No such file or directory`);
+        try { const v = JSON.parse(body)[key]; return o.say(v === undefined ? "null" : String(v)); } catch { return o.err("jq: error: input is not valid JSON"); }
+      }
+      case "htop": case "git": case "vim": case "nano": case "python3": case "node":
+        return local && L.pkgs.includes(cmd === "node" ? "nodejs" : cmd) ? o.note(`(${cmd} would run here in real life)`) : o.err(`Command '${cmd}' not found, but can be installed with:\nsudo apt install ${cmd === "node" ? "nodejs" : cmd}`);
+      case "which": {
+        for (const a of args) {
+          if (BUILTIN_CMDS.includes(a) || (local && L.pkgs.includes(a === "node" ? "nodejs" : a))) o.say(`/usr/bin/${a}`);
+          else o.ok = false;
+        }
+        return;
+      }
       case "history": return o.say(S.history.map((h, i) => `${String(i + 1).padStart(5)}  ${h}`).join("\n"));
       case "ssh": {
         const target = args.find((a) => !a.startsWith("-"));
@@ -1217,7 +1578,11 @@ To generate this message, Docker took the following steps:
         if (url && /localhost:(\d+)/.test(url)) {
           const port = parseInt(url.match(/localhost:(\d+)/)[1], 10);
           const c = engine(S).containers.find((x) => x.status === "running" && x.ports.some((p) => p.host === port));
-          if (!c) return o.err(`curl: (7) Failed to connect to localhost port ${port} after 0 ms: Couldn't connect to server`);
+          if (!c) {
+            const proc = S.host === "local" && linux(S).procs.find((x) => x.port === port);
+            if (proc) return o.say(`Hello from ${proc.cmd} (pid ${proc.pid}) on port ${port}`);
+            return o.err(`curl: (7) Failed to connect to localhost port ${port} after 0 ms: Couldn't connect to server`);
+          }
           const mapped = c.ports.find((p) => p.host === port);
           if (LISTEN[c.kind] && mapped.container !== LISTEN[c.kind]) return o.err(`curl: (56) Recv failure: Connection reset by peer`);
           if (c.kind === "api") return o.say(`{"status":"ok","orders":1284}`);
@@ -1227,7 +1592,12 @@ To generate this message, Docker took the following steps:
         }
         return o.err("curl: (6) Could not resolve host (the simulator only reaches localhost and get.docker.com)");
       }
-      case "sudo": return shell(S, line.replace(/^\s*sudo\s+/, ""), o);
+      case "sudo": {
+        if (!args.length) return o.err("usage: sudo COMMAND");
+        if (asRoot) return shell(S, line.replace(/^\s*sudo\s+/, ""), o);
+        asRoot = true;
+        try { return shell(S, line.replace(/^\s*sudo\s+/, ""), o); } finally { asRoot = false; }
+      }
       default:
         return o.err(`${cmd}: command not found`);
     }
@@ -1260,7 +1630,17 @@ To generate this message, Docker took the following steps:
 
     if (line === "clear" || line === "cls") { result.clear = true; return result; }
     if (line === "help") {
-      o.say(`This is a practice terminal. It understands:\n  docker ...        containers, images, volumes, networks, compose\n  kubectl ...       pods, deployments, services, rollouts\n  kind ...          create a local Kubernetes cluster\n  ssh my-vps        log in to a practice server (exit to leave)\n  ls, cat, pwd, clear, history`);
+      o.say(`This is a practice terminal. It understands:\n  docker ...        containers, images, volumes, networks, compose\n  kubectl ...       pods, deployments, services, rollouts\n  kind ...          create a local Kubernetes cluster\n  ssh my-vps        log in to a practice server (exit to leave)\n  linux basics      ls cd pwd cat mkdir touch rm cp mv chmod\n                    ps kill ss lsof env export sudo apt\n  clear, history`);
+      return result;
+    }
+    const grep = line.match(/^(.+?)\|\s*grep\s+(-i\s+)?["']?([^"'|]+?)["']?\s*$/);
+    if (grep && !line.includes("get.docker.com")) {
+      const inner = Out();
+      shell(S, grep[1].trim(), inner);
+      const needle = grep[2] ? grep[3].toLowerCase() : grep[3];
+      inner.lines.filter((l) => (grep[2] ? l.t.toLowerCase() : l.t).includes(needle)).forEach((l) => o.lines.push(l));
+      result.ok = inner.ok;
+      result.argv = tokenize(grep[1]);
       return result;
     }
     if (line.includes("|") && !line.includes("get.docker.com")) {
@@ -1281,7 +1661,11 @@ To generate this message, Docker took the following steps:
   window.Sim = {
     createState, exec, tokenize, normRef, engine,
     findContainer, CATALOG, netsOf,
-    prompt(S) { return S.host === "local" ? { user: "you@laptop", path: "~/app" } : { user: "deploy@my-vps", path: "~" }; },
+    prompt(S) { return S.host === "local" ? { user: "you@laptop", path: tilde(linux(S).cwd) } : { user: "deploy@my-vps", path: "~" }; },
+    linux,
+    // Course lessons start in ~/app on the laptop.
+    cdApp(S) { const L = linux(S); S.host = "local"; L.prev = L.cwd; L.cwd = APP; L.env.PWD = APP; },
+    spawn(S, proc) { const L = linux(S); if (!L.procs.some((p) => p.pid === proc.pid)) L.procs.push(proc); },
     ensureImage(S, ref, host = "local") {
       const E = S.hosts[host];
       ref = normRef(ref);

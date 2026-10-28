@@ -18,6 +18,7 @@
   --yellow: #e8a400;
   --red: #d7362b;
   --teal: #0e8c8c;
+  --purple: #6f4bd8;
 
   --ok: #1d8a4e;
   --ok-soft: #dff2e6;
@@ -57,6 +58,7 @@
   --yellow: #ffc233;
   --red: #ff6b5e;
   --teal: #2fd0c6;
+  --purple: #a48bff;
 
   --ok: #3ccf7f;
   --ok-soft: #153223;
@@ -103,6 +105,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .c-yellow { --c: var(--yellow); }
 .c-red { --c: var(--red); }
 .c-teal { --c: var(--teal); }
+.c-purple { --c: var(--purple); }
 
 /* ============================================================ top bar */
 .topbar {
@@ -221,18 +224,144 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 }
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 .crate:not(.locked):hover { transform: translateY(-5px); border-color: var(--c); box-shadow: 0 22px 40px -22px color-mix(in srgb, var(--c) 70%, transparent); }
+/* Cover: a container whose doors swing open on hover to show a scene for that module. */
 .crate-doors {
-  height: 96px; display: flex; justify-content: space-between; align-items: flex-end; padding: 12px 14px;
+  height: 96px; position: relative; perspective: 700px; overflow: hidden; color: #fff;
+  background: radial-gradient(90% 130% at 50% 100%, color-mix(in srgb, var(--c) 55%, transparent), transparent 75%), #121418;
+}
+.cv-door {
+  position: absolute; top: 0; bottom: 0; width: 50%; display: flex; align-items: flex-end; padding: 12px 14px;
   background: var(--c);
   background-image:
     repeating-linear-gradient(90deg, transparent 0 9px, rgba(0, 0, 0, .13) 9px 11px, rgba(255, 255, 255, .14) 11px 13px, transparent 13px 22px),
     linear-gradient(180deg, rgba(255, 255, 255, .14), rgba(0, 0, 0, .12));
-  color: #fff; position: relative;
+  backface-visibility: hidden; z-index: 1;
+  transition: transform .55s cubic-bezier(.3, 1.25, .4, 1), filter .55s;
 }
-.crate-doors::after { /* door handles */
-  content: ""; position: absolute; left: 50%; top: 16px; bottom: 16px; width: 2px; background: rgba(0, 0, 0, .25);
-  box-shadow: -10px 0 0 rgba(255, 255, 255, .25), 10px 0 0 rgba(255, 255, 255, .25);
+.cv-door.l { left: 0; transform-origin: left center; box-shadow: inset -1px 0 0 rgba(0, 0, 0, .3); }
+.cv-door.r { right: 0; justify-content: flex-end; transform-origin: right center; }
+.cv-door::after { /* handle */
+  content: ""; position: absolute; top: 16px; bottom: 16px; width: 2px; background: rgba(255, 255, 255, .3);
 }
+.cv-door.l::after { right: 9px; }
+.cv-door.r::after { left: 9px; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-door.l { transform: rotateY(-72deg); filter: brightness(.75); }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-door.r { transform: rotateY(72deg); filter: brightness(.75); }
+
+.cv { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; font: 700 11px var(--mono); }
+@keyframes cvPop { from { transform: scale(0); opacity: 0; } }
+@keyframes cvGrow { from { transform: scaleX(0); } }
+@keyframes cvFade { from { opacity: 0; } }
+
+/* 0 · the Linux warm-up: a wide featured crate, a penguin listing files */
+.yard.warm { margin-bottom: 48px; }
+.crate-num.glyph { font: 700 34px/.9 var(--mono); letter-spacing: -.06em; }
+.module-crate span.glyph { font: 700 46px/.9 var(--mono); letter-spacing: -.06em; }
+.crate.wide { grid-column: 1 / -1; flex-direction: row; }
+.crate.wide .crate-doors { flex: none; width: 46%; height: auto; min-height: 150px; }
+.cv-linux { gap: 18px; }
+.cv-tux { font-size: 46px; line-height: 1; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .4)); }
+.cv-shell { background: rgba(0, 0, 0, .55); border-radius: 8px; padding: 9px 12px; color: #e8e8e8; font-weight: 500; font-size: 11px; }
+.cv-shell p { margin: 3px 0 0; white-space: nowrap; color: #b9bdc7; }
+.cv-type2 { display: inline-block; width: 8ch; overflow: hidden; white-space: nowrap; vertical-align: bottom; color: #7ee787; font-weight: 700; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-tux { animation: cvHop .5s cubic-bezier(.3, 1.6, .5, 1) .3s both, cvWaddle 1.2s ease-in-out 1s infinite; }
+@keyframes cvHop { from { transform: translateY(40px) scale(.6); opacity: 0; } }
+@keyframes cvWaddle { 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-type2 { animation: cvType2 .5s steps(8) .45s both; }
+@keyframes cvType2 { from { width: 0; } }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-shell p { animation: cvFade .2s ease both; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-shell p:nth-child(2) { animation-delay: 1.05s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-shell p:nth-child(3) { animation-delay: 1.2s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-shell p:nth-child(4) { animation-delay: 1.35s; }
+
+/* 1 · run a container */
+.cv-basics { flex-direction: column; gap: 9px; }
+.cv-term { background: rgba(0, 0, 0, .55); padding: 5px 10px; border-radius: 6px; color: #e8e8e8; font-weight: 600; }
+.cv-type { display: inline-block; width: 21ch; overflow: hidden; white-space: nowrap; vertical-align: bottom; }
+.cv-pill { display: flex; align-items: center; gap: 6px; background: #fff; color: #17181c; padding: 3px 10px; border-radius: 99px; font-size: 10.5px; }
+.cv-pill i { width: 7px; height: 7px; border-radius: 50%; background: #2fbf6a; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-type { animation: cvType .9s steps(21) .35s both; }
+@keyframes cvType { from { width: 0; } }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pill { animation: cvPop .35s cubic-bezier(.3, 1.6, .5, 1) 1.35s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pill i { animation: cvPulse 1.2s ease 1.7s infinite; }
+@keyframes cvPulse { from { box-shadow: 0 0 0 0 rgba(47, 191, 106, .7); } to { box-shadow: 0 0 0 7px rgba(47, 191, 106, 0); } }
+
+/* 2 · image layers stack up */
+.cv-images { flex-direction: column; gap: 3px; }
+.ly { width: 156px; padding: 3px 8px; border-radius: 4px; font-size: 10px; background: rgba(255, 255, 255, .14); border-left: 3px solid var(--c); }
+.ly.l1 { background: rgba(255, 255, 255, .26); }
+.crate:not(.locked):is(:hover, :focus-visible) .ly { animation: cvDrop .45s cubic-bezier(.3, 1.5, .5, 1) both; }
+.crate:not(.locked):is(:hover, :focus-visible) .l1 { animation-delay: .3s; }
+.crate:not(.locked):is(:hover, :focus-visible) .l2 { animation-delay: .6s; }
+.crate:not(.locked):is(:hover, :focus-visible) .l3 { animation-delay: .9s; }
+@keyframes cvDrop { from { transform: translateY(-70px); opacity: 0; } }
+
+/* 3 · two containers on a network, data flowing, a volume under the db */
+.cv-data { gap: 0; }
+.cv-node { position: relative; z-index: 1; padding: 6px 11px; border-radius: 6px; background: #fff; color: #17181c; }
+.cv-node small { position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); white-space: nowrap; font-size: 9px; color: #fff; background: rgba(0, 0, 0, .5); padding: 2px 6px; border-radius: 4px; }
+.cv-wire { position: relative; width: 96px; height: 2px; transform-origin: left; background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .75) 0 5px, transparent 5px 9px); }
+.cv-wire::after { content: "appnet"; position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); font-size: 9px; opacity: .8; }
+.cv-wire i { position: absolute; top: -3px; left: 0; width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px #fff; opacity: 0; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-node { animation: cvPop .35s cubic-bezier(.3, 1.6, .5, 1) .3s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .n2 { animation-delay: .45s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-wire { animation: cvGrow .4s ease .65s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-wire i { animation: cvPacket 1.2s linear 1s infinite; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-wire i:nth-child(2) { animation-delay: 1.4s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-wire i:nth-child(3) { animation-delay: 1.8s; }
+@keyframes cvPacket { 0% { left: 0; opacity: 0; } 15%, 85% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+
+/* 4 · compose brings up three boxes and links them */
+.cv-compose { gap: 0; padding-top: 14px; }
+.cv-cmd { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; opacity: .85; }
+.mb { display: grid; place-items: center; width: 50px; height: 30px; border-radius: 5px; background: #fff; color: #17181c; font-size: 10px; box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 70%, #000); }
+.cl { width: 18px; height: 2px; background: #fff; transform-origin: left; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-cmd { animation: cvFade .3s ease .25s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .mb { animation: cvPop .35s cubic-bezier(.3, 1.6, .5, 1) both; }
+.crate:not(.locked):is(:hover, :focus-visible) .m1 { animation-delay: .45s; }
+.crate:not(.locked):is(:hover, :focus-visible) .m2 { animation-delay: .6s; }
+.crate:not(.locked):is(:hover, :focus-visible) .m3 { animation-delay: .75s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cl { animation: cvGrow .25s ease both; }
+.crate:not(.locked):is(:hover, :focus-visible) .c1 { animation-delay: 1s; }
+.crate:not(.locked):is(:hover, :focus-visible) .c2 { animation-delay: 1.15s; }
+
+/* 5 · a truck delivers the box to the server */
+.cv-road { position: absolute; left: 20%; right: 20%; bottom: 18px; height: 2px; background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .5) 0 8px, transparent 8px 14px); }
+.cv-truck { position: absolute; right: calc(22% + 46px); bottom: 17px; display: grid; justify-items: center; }
+.cv-truck b { width: 26px; height: 15px; border-radius: 3px; margin-bottom: -6px; background: var(--c); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .25); }
+.cv-truck span { font-size: 30px; line-height: 1; transform: scaleX(-1); }
+.cv-server { position: absolute; right: 22%; bottom: 19px; font-size: 32px; line-height: 1; }
+.cv-server b { position: absolute; right: -6px; top: -6px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: #2fbf6a; color: #fff; font: 900 10px var(--body); }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-truck { animation: cvDrive 1.2s cubic-bezier(.45, 0, .2, 1) .3s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-truck b { animation: cvBounce .2s ease .3s 6; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-server b { animation: cvPop .35s cubic-bezier(.3, 1.6, .5, 1) 1.5s both; }
+@keyframes cvDrive { from { transform: translateX(-200px); opacity: 0; } 15% { opacity: 1; } }
+@keyframes cvBounce { 50% { transform: translateY(-3px); } }
+
+/* 6 · the wheel turns; a pod dies and is replaced */
+.cv-k8s { gap: 16px; }
+.cv-wheel { width: 46px; height: 46px; fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: round; }
+.cv-wheel .hub { fill: #fff; stroke: none; }
+.cv-pods { display: flex; gap: 7px; }
+.cv-pods i, .cv-pods .slot { width: 26px; height: 26px; border-radius: 7px; }
+.cv-pods i { display: block; background: #fff; box-shadow: inset 0 0 0 7px #fff, inset 0 0 0 13px #2fbf6a; }
+.cv-pods .slot { position: relative; }
+.cv-pods .slot i { position: absolute; inset: 0; }
+.cv-pods .dead { opacity: 0; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-wheel { animation: cvSpin 3s linear infinite; }
+@keyframes cvSpin { to { transform: rotate(360deg); } }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pods > i, .crate:not(.locked):is(:hover, :focus-visible) .cv-pods .dead { animation: cvPop .3s cubic-bezier(.3, 1.6, .5, 1) .3s both; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pods > i:last-child { animation-delay: .5s; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pods .dead { animation: cvPop .3s cubic-bezier(.3, 1.6, .5, 1) .4s backwards, cvDie 1s ease 1s forwards; }
+.crate:not(.locked):is(:hover, :focus-visible) .cv-pods .fresh { animation: cvDropIn .5s cubic-bezier(.3, 1.5, .5, 1) 1.9s both; }
+@keyframes cvDie {
+  0% { opacity: 1; }
+  30% { opacity: 1; box-shadow: inset 0 0 0 7px #fff, inset 0 0 0 13px #e5484d; }
+  60% { opacity: 1; transform: none; box-shadow: inset 0 0 0 7px #fff, inset 0 0 0 13px #e5484d; }
+  100% { opacity: 0; transform: translateY(34px) rotate(40deg); box-shadow: inset 0 0 0 7px #fff, inset 0 0 0 13px #e5484d; }
+}
+@keyframes cvDropIn { from { transform: translateY(-60px); opacity: 0; } }
+
 .crate-num { font: 900 46px/.8 var(--display); text-shadow: 0 2px 0 rgba(0, 0, 0, .18); }
 .crate-tag { font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; background: rgba(0, 0, 0, .22); padding: 3px 8px; border-radius: 5px; }
 .crate-body { padding: 16px 16px 18px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
@@ -243,7 +372,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .chip { display: inline-flex; align-items: center; gap: 5px; font: 700 12px var(--body); padding: 4px 9px; border-radius: 99px; background: var(--bg-2); color: var(--ink-2); }
 .chip svg { width: 13px; height: 13px; }
 .chip.s-done { background: var(--ok-soft); color: var(--ok); }
-.chip.s-in-progress, .chip.s-ready { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
+.chip.s-in-progress, .chip.s-ready, .chip.s-optional { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
 .bar { height: 6px; border-radius: 99px; background: var(--bg-2); overflow: hidden; margin-top: 10px; }
 .bar i { display: block; height: 100%; background: var(--c); border-radius: inherit; transition: width .6s; }
 .crate.locked { cursor: not-allowed; }
@@ -256,7 +385,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 }
 .crate.locked:hover .crate-lockmsg, .crate.locked:focus .crate-lockmsg { opacity: 1; transform: none; }
 .crate.complete .crate-doors::before {
-  content: "✓"; position: absolute; right: 14px; top: 10px; width: 28px; height: 28px; border-radius: 50%;
+  content: "✓"; position: absolute; z-index: 2; right: 14px; top: 10px; width: 28px; height: 28px; border-radius: 50%;
   display: grid; place-items: center; background: #fff; color: var(--ok); font: 900 16px var(--body);
 }
 
@@ -264,6 +393,10 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .foot p { margin: 0; max-width: 620px; }
 .linkish { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
 .linkish:hover { color: var(--red); }
+.warmup { display: flex; width: fit-content; text-align: left; margin-top: 22px; font: 600 15px var(--body); color: var(--ink-2); text-decoration: none; }
+.warmup svg { width: 16px; height: 16px; transition: transform .2s; }
+.warmup:hover { color: var(--purple); }
+.warmup:hover svg { transform: translateX(3px); }
 
 /* ============================================================ lesson */
 .lesson-layout {
@@ -731,6 +864,7 @@ body.modal-open { overflow: hidden; }
 .casecard:hover { transform: translateY(-4px) rotate(-.4deg); border-color: var(--pc); }
 .pr-p1 { --pc: var(--red); }
 .pr-p2 { --pc: var(--yellow); }
+.pr-p3 { --pc: var(--blue); }
 .case-top, .ticket-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .case-id { font: 700 12px var(--mono); color: var(--muted); letter-spacing: .04em; }
 .case-pri { font: 800 11px var(--mono); padding: 2px 7px; border-radius: 5px; color: #fff; background: var(--pc, var(--yellow)); }
@@ -762,6 +896,7 @@ body.modal-open { overflow: hidden; }
 .case-info .ticket-head { margin: 18px 0 2px; }
 .case-info .case-pri { --pc: var(--red); }
 .case-info .case-pri.pr-p2 { --pc: var(--yellow); }
+.case-info .case-pri.pr-p3 { --pc: var(--blue); }
 .case-info .lesson-title { margin-top: 10px; }
 .case-info .case-from { margin-bottom: 10px; }
 .symptoms { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 15px; color: var(--ink-2); }
@@ -778,6 +913,7 @@ body.modal-open { overflow: hidden; }
 .clues .ghost { justify-self: start; }
 .case-status { --c: var(--red); }
 .case-status.pr-p2 { --c: var(--yellow); }
+.case-status.pr-p3 { --c: var(--blue); }
 .case-status .mission-top .ghost { display: inline-flex; align-items: center; gap: 6px; }
 .live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 8px; vertical-align: 1px; box-shadow: 0 0 0 0 var(--c); animation: live 1.6s ease-out infinite; }
 @keyframes live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
@@ -803,6 +939,8 @@ body.modal-open { overflow: hidden; }
   .term-input { font-size: 16px; }
 }
 @media (max-width: 620px) {
+  .crate.wide { flex-direction: column; }
+  .crate.wide .crate-doors { width: auto; min-height: 120px; }
   .case-grid { grid-template-columns: minmax(0, 1fr); }
   .cases-link { padding: 0 10px; font-size: 0; gap: 0; }
   .cases-link span { font-size: 17px; }
@@ -850,6 +988,7 @@ body.modal-open { overflow: hidden; }
   .module-hero { flex-direction: column; align-items: flex-start; gap: 16px; }
   .module-crate { width: 88px; height: 88px; }
   .module-crate span { font-size: 40px; }
+  .module-crate span.glyph { font-size: 32px; }
   .yard { grid-template-columns: minmax(0, 1fr); }
   .top-progress span { display: none; }
   .topbar { gap: 10px; }

@@ -18,7 +18,9 @@
     sim: (saved && saved.sim) || Sim.createState(),
     view: (saved && saved.view && saved.view.screen !== "intro" && saved.view) || { screen: "home" },
   };
-  const save = () => store.set(KEY, { done: state.done, sim: state.sim, view: state.view, seenIntro: state.seenIntro, cases: state.cases });
+  // v2 views: the optional Linux module was added at index 0, so older saved views point one module early.
+  if (saved && !saved.v && state.view.mi != null) state.view.mi += 1;
+  const save = () => store.set(KEY, { v: 2, done: state.done, sim: state.sim, view: state.view, seenIntro: state.seenIntro, cases: state.cases });
 
   // Keep the address bar clean: no #anchors, ever.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
@@ -29,7 +31,17 @@
   const totalMissions = COURSE.reduce((a, m) => a + m.lessons.reduce((b, l) => b + l.missions.length, 0), 0);
   const lessonDone = (m, l) => l.missions.every((_, i) => state.done[mid(m, l, i)]);
   const moduleDone = (m) => m.lessons.every((l) => lessonDone(m, l));
-  const moduleUnlocked = (mi) => mi === 0 || moduleDone(COURSE[mi - 1]);
+  // Optional modules (the Linux warm-up) are always open and never gate the next one.
+  const prevCore = (mi) => { for (let k = mi - 1; k >= 0; k--) if (!COURSE[k].optional) return k; return -1; };
+  const moduleUnlocked = (mi) => COURSE[mi].optional || prevCore(mi) === -1 || moduleDone(COURSE[prevCore(mi)]);
+  const modNum = (mi) => (COURSE[mi].optional ? 0 : COURSE.slice(0, mi + 1).filter((m) => !m.optional).length);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const modLabel = (mi) => (COURSE[mi].optional ? "Warm-up" : `Module ${modNum(mi)}`);
+  const modBadge = (mi) => (COURSE[mi].optional ? ">_" : pad2(modNum(mi)));
+  const coreCount = COURSE.filter((m) => !m.optional).length;
+  const LINUX = COURSE.findIndex((m) => m.optional);
+  // Docker lessons start in ~/app; Linux lessons set their own starting point.
+  const prepLesson = (m, l, S) => { if (!m.optional) Sim.cdApp(S); if (l.setup) l.setup(S); };
   const lessonUnlocked = (mi, li) => moduleUnlocked(mi) && COURSE[mi].lessons.slice(0, li).every((l) => lessonDone(COURSE[mi], l));
   const currentMission = (m, l) => l.missions.findIndex((_, i) => !state.done[mid(m, l, i)]);
   const doneCount = () => Object.keys(state.done).length;
@@ -38,7 +50,7 @@
 
   function nextStop() {
     for (let mi = 0; mi < COURSE.length; mi++)
-      for (let li = 0; li < COURSE[mi].lessons.length; li++)
+      if (!COURSE[mi].optional) for (let li = 0; li < COURSE[mi].lessons.length; li++)
         if (!lessonDone(COURSE[mi], COURSE[mi].lessons[li])) return { mi, li };
     return null;
   }
@@ -97,6 +109,18 @@
   }
 
   // ------------------------------------------------------------ HOME
+  // What's inside each module's crate: a tiny scene that plays when the doors swing open on hover.
+  const WHEEL = `<svg class="cv-wheel" viewBox="0 0 64 64"><circle cx="32" cy="32" r="13"/><path d="M32 32V12M32 32l15.6-7.5M32 32l19.5 4.5M32 32l8.7 18M32 32l-8.7 18M32 32l-19.5 4.5M32 32l-15.6-7.5"/><circle class="hub" cx="32" cy="32" r="4"/></svg>`;
+  const COVERS = {
+    linux: `<span class="cv-tux">🐧</span><div class="cv-shell"><span class="cv-type2">$ ls -la</span><p>drwxr-xr-x  you  notes/</p><p>-rwxr-xr-x  you  deploy.sh</p><p>-rw-r--r--  you  .env</p></div>`,
+    basics: `<div class="cv-term"><span class="cv-type">$ docker run -d nginx</span></div><div class="cv-pill"><i></i>web · Up 1 second</div>`,
+    images: `<b class="ly l3">CMD ["npm", "start"]</b><b class="ly l2">COPY . .</b><b class="ly l1">FROM node:22</b>`,
+    data: `<div class="cv-node n1">api</div><div class="cv-wire"><i></i><i></i><i></i></div><div class="cv-node n2">db<small>vol: dbdata</small></div>`,
+    compose: `<span class="cv-cmd">$ docker compose up -d</span><div class="mb m1">web</div><i class="cl c1"></i><div class="mb m2">db</div><i class="cl c2"></i><div class="mb m3">cache</div>`,
+    ship: `<i class="cv-road"></i><div class="cv-truck"><b></b><span>🚚</span></div><div class="cv-server">🖥️<b>✓</b></div>`,
+    k8s: `${WHEEL}<div class="cv-pods"><i></i><span class="slot"><i class="dead"></i><i class="fresh"></i></span><i></i></div>`,
+  };
+
   function renderHome() {
     const stop = nextStop();
     const started = doneCount() > 0;
@@ -110,27 +134,34 @@
               h("span", {}, started ? "Continue" : "Start mission 1"),
               h("small", {}, `${COURSE[stop.mi].title} · ${COURSE[stop.mi].lessons[stop.li].title}`),
               icon.arrow())
-          : h("div", { class: "cta done" }, h("span", {}, "Course complete 🎉"), h("small", {}, "Replay any module below"))
+          : h("div", { class: "cta done" }, h("span", {}, "Course complete 🎉"), h("small", {}, "Replay any module below")),
+        LINUX > -1 && !moduleDone(COURSE[LINUX])
+          ? h("button", { class: "linkish warmup", type: "button", onclick: () => go({ screen: "module", mi: LINUX }) }, "🐧 New to the terminal? Warm up with Linux basics first", icon.arrow())
+          : null
       ),
       heroTerminal()
     );
 
     const yard = h("section", { class: "yard", "aria-label": "Modules" });
+    const warmup = h("section", { class: "yard warm", "aria-label": "Warm-up" });
     COURSE.forEach((m, mi) => {
       const unlocked = moduleUnlocked(mi);
       const complete = moduleDone(m);
       const pct = Math.round((moduleCount(m) / moduleTotal(m)) * 100);
-      const status = complete ? "Done" : !unlocked ? "Locked" : pct > 0 ? "In progress" : "Ready";
+      const status = complete ? "Done" : !unlocked ? "Locked" : pct > 0 ? "In progress" : m.optional ? "Optional" : "Ready";
       const target = () => go({ screen: "module", mi });
-      yard.append(
+      (m.optional ? warmup : yard).append(
         h("button", {
-          class: `crate c-${m.color} ${unlocked ? "" : "locked"} ${complete ? "complete" : ""}`,
+          class: `crate c-${m.color} ${m.optional ? "wide" : ""} ${unlocked ? "" : "locked"} ${complete ? "complete" : ""}`,
           type: "button", style: `--d:${mi * 70}ms`,
           disabled: !unlocked,
           "aria-label": `${m.title}: ${status}`,
           onclick: unlocked ? target : null,
         },
-          h("div", { class: "crate-doors" }, h("span", { class: "crate-num" }, String(mi + 1).padStart(2, "0")), h("span", { class: "crate-tag" }, m.tag)),
+          h("div", { class: "crate-doors" },
+            h("div", { class: `cv cv-${m.id}`, "aria-hidden": "true", html: COVERS[m.id] || "" }),
+            h("div", { class: "cv-door l" }, h("span", { class: `crate-num ${m.optional ? "glyph" : ""}` }, modBadge(mi))),
+            h("div", { class: "cv-door r" }, h("span", { class: "crate-tag" }, m.tag))),
           h("div", { class: "crate-body" },
             h("h3", {}, m.title),
             h("p", {}, m.blurb),
@@ -138,7 +169,7 @@
               h("span", { class: `chip s-${status.replace(" ", "-").toLowerCase()}` }, !unlocked ? icon.lock() : complete ? icon.check() : null, status),
               h("span", { class: "crate-count" }, `${m.lessons.length} lessons · ${moduleTotal(m)} missions`)),
             h("div", { class: "bar" }, h("i", { style: `width:${pct}%` }))),
-          !unlocked && mi > 0 ? h("div", { class: "crate-lockmsg" }, `Finish “${COURSE[mi - 1].title}” to unlock`) : null
+          !unlocked && prevCore(mi) > -1 ? h("div", { class: "crate-lockmsg" }, `Finish “${COURSE[prevCore(mi)].title}” to unlock`) : null
         )
       );
     });
@@ -150,7 +181,10 @@
     const caseTeaser = h("section", { class: "case-teaser" },
       h("h2", { class: "yard-title" }, "Case files", h("span", {}, "Real problems, no instructions. Open any time.")),
       h("div", { class: "case-grid" }, ...CASES.map((c, i) => caseCard(c, i))));
-    app.replaceChildren(h("div", { class: "home" }, hero, h("h2", { class: "yard-title" }, "The yard", h("span", {}, "6 modules, unlock them in order")), yard, caseTeaser, foot));
+    app.replaceChildren(h("div", { class: "home" }, hero,
+      warmup.children.length ? h("h2", { class: "yard-title" }, "Warm-up", h("span", {}, "Optional. New to the terminal? Start here.")) : null,
+      warmup.children.length ? warmup : null,
+      h("h2", { class: "yard-title" }, "The yard", h("span", {}, `${coreCount} modules, unlock them in order`)), yard, caseTeaser, foot));
   }
 
   // Types the text out one letter at a time behind a blinking caret.
@@ -308,13 +342,13 @@
     app.replaceChildren(h("div", { class: `module-page c-${m.color}` },
       h("button", { class: "back", type: "button", onclick: () => go({ screen: "home" }) }, icon.back(), "All modules"),
       h("header", { class: "module-hero" },
-        h("div", { class: "module-crate" }, h("span", {}, String(mi + 1).padStart(2, "0"))),
+        h("div", { class: "module-crate" }, h("span", { class: m.optional ? "glyph" : null }, modBadge(mi))),
         h("div", {},
-          h("p", { class: "kicker" }, `Module ${mi + 1} · ${m.tag}`),
+          h("p", { class: "kicker" }, `${modLabel(mi)} · ${m.tag}${m.optional ? " · optional" : ""}`),
           h("h1", {}, m.title),
           h("p", { class: "hero-sub" }, m.blurb),
           h("div", { class: "bar wide" }, h("i", { style: `width:${pct}%` })),
-          mi === 0 ? h("button", { class: "ghost intro-btn", type: "button", onclick: () => openIntro(null) }, "▶ How Docker works (1 min)") : null)),
+          m.id === "basics" ? h("button", { class: "ghost intro-btn", type: "button", onclick: () => openIntro(null) }, "▶ How Docker works (1 min)") : null)),
       h("ol", { class: "lessons" }, ...rows),
       moduleDone(m) ? h("p", { class: "module-note" }, "Finished lessons stay open. Revisit any of them and replay the missions as practice; your progress is kept.") : null));
   }
@@ -327,7 +361,7 @@
       for (let b = 0; b < COURSE[a].lessons.length; b++) {
         if (a === mi && b === li) break outer;
         const L = COURSE[a].lessons[b];
-        if (L.setup) L.setup(S);
+        prepLesson(COURSE[a], L, S);
         for (const ms of L.missions) { Sim.exec(S, ms.answer); if (S.pending) Sim.exec(S, "y"); }
       }
     }
@@ -356,7 +390,7 @@
       state.view = { screen: "lesson", mi, li };
     }
     const m = COURSE[mi], l = m.lessons[li];
-    if (l.setup && !lessonDone(m, l)) { l.setup(state.sim); save(); }
+    if (!lessonDone(m, l)) { prepLesson(m, l, state.sim); save(); }
 
     // Replay mode: practise a finished lesson again in a throwaway sandbox.
     let replay = null; // { sim, done: Set<number> }
@@ -382,9 +416,9 @@
 
     const missionList = h("ol", { class: "mlist" });
     info.append(
-      h("button", { class: "back", type: "button", onclick: () => go({ screen: "module", mi }) }, icon.back(), `Module ${mi + 1} overview`),
+      h("button", { class: "back", type: "button", onclick: () => go({ screen: "module", mi }) }, icon.back(), `${modLabel(mi)} overview`),
       h("div", { class: "info-head" },
-        h("span", { class: "mod-chip" }, `Module ${mi + 1} · ${m.title}`),
+        h("span", { class: "mod-chip" }, `${modLabel(mi)} · ${m.title}`),
         stepper),
       h("p", { class: "lesson-count" }, `Lesson ${li + 1} of ${m.lessons.length}`),
       h("h1", { class: "lesson-title" }, l.title),
@@ -417,7 +451,7 @@
 
     function startReplay() {
       replay = { sim: sandboxBefore(mi, li), done: new Set() };
-      if (l.setup) l.setup(replay.sim);
+      prepLesson(m, l, replay.sim);
       replay.sim.history = [];
       activeSim = replay.sim;
       term.clear();
@@ -470,15 +504,15 @@
       const lastModule = mi === COURSE.length - 1;
       let next, label, small;
       if (!lastLesson) { next = { screen: "lesson", mi, li: li + 1 }; label = "Next lesson"; small = m.lessons[li + 1].title; }
-      else if (!lastModule) { next = { screen: "lesson", mi: mi + 1, li: 0 }; label = "Module unlocked"; small = COURSE[mi + 1].title; }
+      else if (!lastModule) { next = { screen: "lesson", mi: mi + 1, li: 0 }; label = m.optional ? "On to Docker" : "Module unlocked"; small = COURSE[mi + 1].title; }
       else { next = { screen: "home" }; label = "You finished the course"; small = "Back to the yard"; }
       card.classList.add("complete");
       const replayed = !!replay;
       card.replaceChildren(
         h("div", { class: "complete-badge" }, icon.check()),
         h("div", { class: "complete-copy" },
-          h("p", { class: "mission-label" }, replayed ? "Replay complete" : lastLesson ? `Module ${mi + 1} complete` : "Lesson complete"),
-          h("p", { class: "goal" }, replayed ? "Same commands, second time round. That's how it sticks." : lastLesson ? (lastModule ? "That's everything. You can now run, build, ship and orchestrate containers." : `Nice. “${COURSE[mi + 1].title}” is open.`) : "All missions done. Keep playing in the terminal, or move on."),
+          h("p", { class: "mission-label" }, replayed ? "Replay complete" : lastLesson ? `${modLabel(mi)} complete` : "Lesson complete"),
+          h("p", { class: "goal" }, replayed ? "Same commands, second time round. That's how it sticks." : lastLesson ? (lastModule ? "That's everything. You can now run, build, ship and orchestrate containers." : m.optional ? "You can find your way around a Linux terminal. Docker will feel familiar now." : `Nice. “${COURSE[mi + 1].title}” is open.`) : "All missions done. Keep playing in the terminal, or move on."),
           h("div", { class: "complete-actions" },
             h("button", { class: "cta small", type: "button", onclick: () => go(next) }, h("span", {}, label), h("small", {}, small), icon.arrow()),
             h("button", { class: "cta small alt", type: "button", onclick: startReplay }, h("span", {}, replayed ? "Replay again" : "Replay missions"), h("small", {}, "Practise from memory"), icon.reset()),
@@ -512,7 +546,7 @@
     term.setHistory(state.sim.history);
     paintCard(false);
     paintMissions();
-    if (mi === 0 && li === 0) openIntro(() => term.focus());
+    if (m.id === "basics" && li === 0) openIntro(() => term.focus());
     else term.focus();
   }
 

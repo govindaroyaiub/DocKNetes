@@ -3,16 +3,16 @@
 **Live: [docker-k8s-learn.vercel.app](https://docker-k8s-learn.vercel.app/)**
 
 A hands-on course for people who'd rather type commands than read docs.
-Docker → Compose → deploying to a server → Kubernetes, as **58 missions** in a practice terminal that runs in the browser. No install, no sign-up.
+Docker → Compose → deploying to a server → Kubernetes, as **58 missions** in a practice terminal that runs in the browser, plus an optional Linux warm-up (21 missions) for anyone new to the terminal. No install, no sign-up.
 
 ![DocKnetes homepage](docs/home.png)
 
 ## How it works
 
 - **Learn by typing.** Each lesson is 2 lines of explanation and a few missions. You type real commands into a practice terminal and get the output real Docker would print, errors included.
-- **A terminal that remembers.** Run a container and it shows up in `docker ps`. Delete it and it's gone. Works for images, volumes, networks, Compose, `kubectl`, `kind` and `ssh` to a practice server.
+- **A terminal that remembers.** Run a container and it shows up in `docker ps`. Delete it and it's gone. Works for images, volumes, networks, Compose, `kubectl`, `kind` and `ssh` to a practice server, and for the Linux basics underneath: folders, permissions, processes, ports, environment variables and `apt`.
 - **Checks the result, not the text.** `docker run -d -p 8080:80 --name web nginx` and `docker run --name=web -dp 8080:80 nginx` both pass.
-- **Strict order.** Modules, lessons and missions unlock one by one.
+- **Strict order.** Docker modules, lessons and missions unlock one by one. The Linux warm-up is open any time and never blocks Docker.
 - **Guided first run.** The first time through a lesson, the command to type is shown. When you replay a finished lesson it's hidden behind **Hint** and **Show answer**, so you practise from memory.
 - **Revisit anything.** Every finished lesson stays open. **Replay missions** runs it again in a fresh sandbox without touching your progress.
 - **"Kitchen in a box" intro.** A 10-scene animated story before mission 1. It opens with a real problem (two projects needing different PHP versions on one laptop), then explains containers, ports, images, volumes, Compose, registries and Kubernetes.
@@ -24,6 +24,7 @@ Docker → Compose → deploying to a server → Kubernetes, as **58 missions** 
 
 | # | Module | What you do |
 |---|---|---|
+| >_ | Linux Survival Kit *(optional warm-up)* | `pwd`, `ls -la`, `cd`, `mkdir`; `chmod +x`, `sudo`; `ps`, `ss`, `kill`; `export`, `$VAR`, `apt install` |
 | 1 | First Containers | run, list, stop, start, remove; ports and logs |
 | 2 | Images & Dockerfile | pull, tag, delete images; build and run your own |
 | 3 | Volumes & Networks | keep data alive; containers talking by name; clean up |
@@ -49,6 +50,10 @@ Each case is a support ticket plus a broken sandbox. Investigate with the comman
 | INC-1046 | Server disk at 97% | `system df`, `prune` (without deleting the backups!) |
 | INC-1047 | Friday deploy broke production | `kubectl describe`, `rollout undo` |
 | INC-1048 | Black Friday traffic is coming | `kubectl scale`, `expose` |
+| INC-1049 | Port 3000 is already in use | Linux: `ss`, `kill` (without stopping sshd or dockerd) |
+| INC-1050 | The deploy script says Permission denied | Linux: `ls -l`, `sudo chmod +x` on a root-owned file |
+| INC-1051 | The shop dies right after boot | Linux: `tail` the log, `sudo mkdir -p`, `touch` |
+| INC-1052 | Build fails: jq: command not found | Linux: `apt` vs `apk`, `sudo apt install` |
 
 ## Tech
 
@@ -58,7 +63,7 @@ Plain HTML, CSS and JavaScript. No build step, no dependencies, no backend.
 |---|---|
 | `index.html` | Page shell |
 | `styles.css` | Theme, layout, intro animations |
-| `sim.js` | The fake Docker / Compose / kubectl engine |
+| `sim.js` | The fake Docker / Compose / kubectl engine, plus a small Linux shell (filesystem, permissions, processes, env, packages) |
 | `course.js` | Modules, lessons, missions and their checks |
 | `cases.js` | Case studies: ticket, broken setup, check, clues, references |
 | `app.js` | UI: home, module overview, lesson + terminal, intro modal |

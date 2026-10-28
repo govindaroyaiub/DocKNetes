@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Ship It: Learn Docker by Typing</title>
+  <title>DocKnetes: Learn Docker & Kubernetes by Typing</title>
   <meta name="description" content="Learn Docker, Compose, deployment and Kubernetes by typing real commands into a practice terminal. No setup, no long reading. Missions unlock one by one.">
   <meta name="theme-color" content="#f3efe6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='14' width='56' height='36' rx='4' fill='%23ff5b1a'/><g stroke='%23fff' stroke-width='3' opacity='.55'><path d='M14 20v24M22 20v24M30 20v24M38 20v24M46 20v24'/></g></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='3' y='11' width='58' height='42' rx='5' fill='%23ff5b1a'/><g fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round'><circle cx='32' cy='32' r='9.5'/><path d='M32 32V18M32 32l10.9-5.3M32 32l13.6 3.1M32 32l6.1 12.6M32 32l-6.1 12.6M32 32l-13.6 3.1M32 32l-10.9-5.3'/></g><circle cx='32' cy='32' r='3' fill='%23fff'/></svg>">
   <script>
     // Apply saved theme before paint (default: light).
     try { var t = localStorage.getItem("shipit-theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}
@@ -18,9 +18,19 @@
 </head>
 <body>
   <header class="topbar">
-    <button class="brand" id="brand" type="button" aria-label="All modules">
-      <span class="brand-box" aria-hidden="true"></span>
-      <span class="brand-word">SHIP<span>/</span>IT</span>
+    <button class="brand" id="brand" type="button" aria-label="DocKnetes: all modules">
+      <!-- A shipping container (Docker) with a helm wheel on its doors (Kubernetes). -->
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect class="bm-box" x="3" y="11" width="58" height="42" rx="5"/>
+        <path class="bm-ribs" d="M11 16v32M17 16v32M47 16v32M53 16v32"/>
+        <g class="bm-wheel">
+          <circle cx="32" cy="32" r="9.5"/>
+          <path d="M32 32V18M32 32l10.9-5.3M32 32l13.6 3.1M32 32l6.1 12.6M32 32l-6.1 12.6M32 32l-13.6 3.1M32 32l-10.9-5.3"/>
+          <circle class="bm-hub" cx="32" cy="32" r="3"/>
+        </g>
+      </svg>
+      <!-- The K is mirrored: a container door swung open, hinged between Docker and Kubernetes. -->
+      <span class="brand-word" aria-hidden="true">DOC<span class="brand-k">K</span>NETES</span>
     </button>
     <div class="top-progress" title="Missions completed">
       <div class="top-track"><div class="top-fill" id="topFill"></div></div>

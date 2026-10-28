@@ -2,6 +2,7 @@
   "use strict";
 
   // ------------------------------------------------------------ storage
+  // Keys keep the old "shipit" name so existing progress survives the rename.
   const KEY = "shipit-v2";
   const THEME_KEY = "shipit-theme";
   const store = {
@@ -173,13 +174,22 @@
   }
 
   const kbox = (cls = "", label = "") => `<div class="kbox ${cls}"><i class="door l"></i><i class="door r"></i>${label ? `<b>${label}</b>` : ""}</div>`;
+  // Two projects that need different PHP versions. Pills with class "pa" show while PHP 7.4 is installed, "pb" while 8.4 is.
+  const proj = (cls, name, laravel, php, pills) => `<div class="a proj ${cls}"><b>${name}</b><span>Laravel ${laravel}</span><span>PHP ${php}</span><div class="pst-wrap">${pills}</div></div>`;
+  const pill = (ok, cls = "") => `<i class="pst ${ok ? "ok" : "bad"} ${cls}">${ok ? "✓ runs" : "✗ broken"}</i>`;
   const SCENES = [
-    { tag: "The problem", title: "Your app needs a kitchen",
-      text: "PHP, a database, Node… are its oven, fridge and pots. Installed straight onto your computer, it gets messy fast.",
+    { tag: "The problem", title: "Two projects, one laptop",
+      text: "Your shop runs on <b>Laravel 10 + PHP 7.4</b>. Your new blog needs <b>Laravel 13 + PHP 8.4</b>. Your laptop can only have one PHP installed, so one of them breaks.",
+      stage: `${proj("p0", "🛒 shop", 10, "7.4", pill(false))}<span class="a laptop">💻</span><span class="a vchip">installed: PHP 8.4</span>${proj("p1", "📝 blog", 13, "8.4", pill(true))}` },
+    { tag: "The problem", title: "Upgrade, downgrade, repeat?",
+      text: "Switch to PHP 7.4 and the blog breaks. Switch back and the shop breaks. Reinstall PHP every time you change project? Forever?",
+      stage: `${proj("p0", "🛒 shop", 10, "7.4", pill(true, "pa") + pill(false, "pb"))}<span class="a laptop">💻</span><span class="a vchip"><span class="vswap"><span class="pa">installing PHP 7.4…</span><span class="pb">installing PHP 8.4…</span></span></span><span class="a mess">😵‍💫</span>${proj("p1", "📝 blog", 13, "8.4", pill(false, "pa") + pill(true, "pb"))}` },
+    { tag: "The idea", title: "This is where Docker comes in",
+      text: "Docker is like a kitchen where every app gets its own oven, fridge and pots: its own tools, in exactly the versions it needs. No more cramming every project into one kitchen, your laptop, and fighting over the same oven.",
       stage: `<span class="a laptop">💻</span>${["🍳", "🧊", "🍲", "🔥", "🥄", "🫙"].map((e, i) => `<span class="a fall f${i}">${e}</span>`).join("")}<span class="a mess">😵‍💫</span>` },
-    { tag: "Module 1", title: "Docker puts it in a box",
-      text: "A <b>container</b> is a kitchen in a box: exactly the tools the app needs, sealed in. Nothing leaks out.",
-      stage: `${["🍳", "🧊", "🍲"].map((e, i) => `<span class="a fly y${i}">${e}</span>`).join("")}${kbox("shut mid", "container")}` },
+    { tag: "Module 1", title: "Docker gives each app a box",
+      text: "A <b>container</b> is a kitchen in a box: exactly the tools one app needs, sealed in. Shop gets PHP 7.4, blog gets PHP 8.4. Run as many versions as you like, side by side, and your laptop stays clean.",
+      stage: `${["🐘", "🐘", "🍳", "🧊"].map((e, i) => `<span class="a fly y${i}">${e}</span>`).join("")}${kbox("shut bl", "shop · php 7.4")}${kbox("shut br", "blog · php 8.4")}` },
     { tag: "Module 1", title: "Doors let you look inside",
       text: "A <b>port</b> is a little door. <code>-p 8080:80</code> means door 8080 on your computer leads to door 80 in the box.",
       stage: `${kbox("ajar left", "nginx")}<span class="a beam"></span><div class="a browser"><i></i><span>localhost:8080</span></div><span class="a peek">👀</span>` },

@@ -1,11 +1,11 @@
-# Ship It: Learn Docker by Typing
+# DocKnetes: Learn Docker & Kubernetes by Typing
 
 **Live: [docker-k8s-learn.vercel.app](https://docker-k8s-learn.vercel.app/)**
 
 A hands-on course for people who'd rather type commands than read docs.
 Docker → Compose → deploying to a server → Kubernetes, as **58 missions** in a practice terminal that runs in the browser. No install, no sign-up.
 
-![Ship It homepage](docs/home.png)
+![DocKnetes homepage](docs/home.png)
 
 ## How it works
 

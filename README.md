@@ -15,10 +15,10 @@ Docker → Compose → deploying to a server → Kubernetes, as **58 missions** 
 - **Strict order.** Modules, lessons and missions unlock one by one.
 - **Guided first run.** The first time through a lesson, the command to type is shown. When you replay a finished lesson it's hidden behind **Hint** and **Show answer**, so you practise from memory.
 - **Revisit anything.** Every finished lesson stays open. **Replay missions** runs it again in a fresh sandbox without touching your progress.
-- **"Kitchen in a box" intro.** An 8-scene animated story that explains containers, ports, images, volumes, Compose, registries and Kubernetes before mission 1.
+- **"Kitchen in a box" intro.** A 10-scene animated story before mission 1. It opens with a real problem (two projects needing different PHP versions on one laptop), then explains containers, ports, images, volumes, Compose, registries and Kubernetes.
 - Light (default) and dark themes, works on phones, clean URL, progress saved in the browser (`localStorage`).
 
-![Kitchen in a box intro](docs/intro.png)
+![Intro story: two projects, one PHP version](docs/intro.png)
 
 ## The course
 

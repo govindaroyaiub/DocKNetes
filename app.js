@@ -13,10 +13,11 @@
   const state = {
     done: (saved && saved.done) || {},
     seenIntro: !!(saved && saved.seenIntro),
+    cases: (saved && saved.cases) || {},
     sim: (saved && saved.sim) || Sim.createState(),
     view: (saved && saved.view && saved.view.screen !== "intro" && saved.view) || { screen: "home" },
   };
-  const save = () => store.set(KEY, { done: state.done, sim: state.sim, view: state.view, seenIntro: state.seenIntro });
+  const save = () => store.set(KEY, { done: state.done, sim: state.sim, view: state.view, seenIntro: state.seenIntro, cases: state.cases });
 
   // Keep the address bar clean: no #anchors, ever.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
@@ -79,6 +80,7 @@
     document.getElementById("topCount").textContent = `${doneCount()}/${totalMissions}`;
   }
   document.getElementById("brand").addEventListener("click", () => go({ screen: "home" }));
+  document.getElementById("casesBtn").addEventListener("click", () => go({ screen: "cases" }));
   document.getElementById("themeBtn").addEventListener("click", () => {
     const root = document.documentElement;
     root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
@@ -144,7 +146,10 @@
       h("p", {}, "Progress is saved in this browser. The terminal is a simulator: it behaves like Docker, but nothing runs on your machine."),
       h("button", { class: "linkish", type: "button", onclick: resetAll }, icon.reset(), "Reset all progress"));
 
-    app.replaceChildren(h("div", { class: "home" }, hero, h("h2", { class: "yard-title" }, "The yard", h("span", {}, "6 modules, unlock them in order")), yard, foot));
+    const caseTeaser = h("section", { class: "case-teaser" },
+      h("h2", { class: "yard-title" }, "Case files", h("span", {}, "Real problems, no instructions. Open any time.")),
+      h("div", { class: "case-grid" }, ...CASES.map((c, i) => caseCard(c, i))));
+    app.replaceChildren(h("div", { class: "home" }, hero, h("h2", { class: "yard-title" }, "The yard", h("span", {}, "6 modules, unlock them in order")), yard, caseTeaser, foot));
   }
 
   function heroTerminal() {
@@ -559,12 +564,151 @@
     };
   }
 
+  // ------------------------------------------------------------ CASE FILES (open any time, no locks)
+  const CASES = window.CASES;
+  const caseEverSolved = (c) => !!(state.cases[c.id] && state.cases[c.id].everSolved);
+
+  function caseCard(c, i) {
+    const solved = caseEverSolved(c);
+    return h("button", { class: `casecard pr-${c.priority.toLowerCase()} ${solved ? "solved" : ""}`, type: "button", style: `--d:${i * 50}ms`, onclick: () => go({ screen: "case", id: c.id }) },
+      h("div", { class: "case-top" },
+        h("span", { class: "case-id" }, c.ticket),
+        h("span", { class: "case-pri" }, c.priority),
+        h("span", { class: "case-level" }, c.level)),
+      h("h3", {}, c.title),
+      h("p", { class: "case-from" }, `From: ${c.from}`),
+      h("div", { class: "case-foot" },
+        h("div", { class: "case-tags" }, ...c.tags.map((t) => h("code", {}, t))),
+        h("span", { class: `chip ${solved ? "s-done" : "s-open"}` }, solved ? icon.check() : null, solved ? "Solved" : "Open")),
+      solved ? h("span", { class: "case-stamp", "aria-hidden": "true" }, "Solved") : null);
+  }
+
+  function renderCases() {
+    const solved = CASES.filter(caseEverSolved).length;
+    app.replaceChildren(h("div", { class: "cases-page" },
+      h("button", { class: "back", type: "button", onclick: () => go({ screen: "home" }) }, icon.back(), "Home"),
+      h("header", { class: "cases-hero" },
+        h("p", { class: "kicker" }, "Case files · open any time"),
+        h("h1", {}, "Fix real problems"),
+        h("p", { class: "hero-sub" }, "Each case is a broken setup and a ticket. No steps, no hand-holding: investigate with the commands you know, fix it, and the case closes itself. Stuck? Open a clue."),
+        h("p", { class: "cases-count" }, h("b", {}, `${solved}/${CASES.length}`), " solved")),
+      h("div", { class: "case-grid" }, ...CASES.map((c, i) => caseCard(c, i)))));
+  }
+
+  function freshCase(c, keep) {
+    const S = Sim.createState();
+    c.setup(S);
+    S.history = [];
+    state.cases[c.id] = { sim: S, solved: false, clues: 0, everSolved: !!(keep && keep.everSolved) };
+    save();
+    return state.cases[c.id];
+  }
+
+  function renderCase() {
+    const ci = CASES.findIndex((x) => x.id === state.view.id);
+    if (ci === -1) return go({ screen: "cases" });
+    const c = CASES[ci];
+    let cs = state.cases[c.id] || freshCase(c);
+
+    const info = h("aside", { class: "info case-info" });
+    const work = h("section", { class: "work" });
+    app.replaceChildren(h("div", { class: "lesson-layout" }, work, info));
+
+    // ----- ticket (left)
+    const clueBox = h("div", { class: "clues" });
+    info.append(
+      h("button", { class: "back", type: "button", onclick: () => go({ screen: "cases" }) }, icon.back(), "All case files"),
+      h("div", { class: "ticket-head" },
+        h("span", { class: "case-id" }, c.ticket),
+        h("span", { class: `case-pri pr-${c.priority.toLowerCase()}` }, c.priority),
+        h("span", { class: "case-level" }, c.level)),
+      h("h1", { class: "lesson-title" }, c.title),
+      h("p", { class: "case-from" }, `From: ${c.from}`),
+      h("p", { class: "read", html: c.story }),
+      h("h2", { class: "sub" }, "Symptoms"),
+      h("ul", { class: "symptoms" }, ...c.symptoms.map((x) => h("li", { html: x }))),
+      h("h2", { class: "sub" }, "Skills you'll use"),
+      h("div", { class: "case-tags big" }, ...c.tags.map((t) => h("code", {}, t))),
+      h("h2", { class: "sub" }, "Clues"),
+      clueBox,
+      h("h2", { class: "sub" }, icon.book(), "References"),
+      h("ul", { class: "docs" }, ...c.refs.map(([t, u]) => h("li", {}, h("a", { href: u, target: "_blank", rel: "noopener" }, t, icon.ext())))));
+
+    function paintClues() {
+      const shown = c.clues.slice(0, cs.clues);
+      const kids = shown.map((t, k) => h("div", { class: `clue ${k === c.clues.length - 1 ? "last" : ""}` }, h("span", {}, `Clue ${k + 1}`), h("p", { html: t })));
+      if (cs.clues >= c.clues.length) kids.push(h("div", { class: "clue fix" }, h("span", {}, "The fix"), ...c.fix.map((f) => h("code", {}, f))));
+      else kids.push(h("button", { class: "ghost", type: "button", onclick: () => { cs.clues += 1; save(); paintClues(); } }, cs.clues === c.clues.length - 1 ? "Show last clue" : `Show clue ${cs.clues + 1} of ${c.clues.length}`));
+      clueBox.replaceChildren(...kids);
+    }
+
+    // ----- status + terminal (right)
+    const status = h("div", { class: `mission case-status pr-${c.priority.toLowerCase()}` });
+    const termEl = h("div", { class: "term" });
+    work.append(status, termEl);
+    term = createTerminal(termEl, onCommand);
+    activeSim = cs.sim;
+
+    function paintStatus(flash) {
+      status.classList.toggle("flash", !!flash);
+      status.classList.toggle("complete", cs.solved);
+      const failMsg = !cs.solved && c.fail ? c.fail(cs.sim) : null;
+      const next = CASES[(ci + 1) % CASES.length];
+      if (cs.solved) {
+        status.replaceChildren(
+          h("div", { class: "complete-badge" }, icon.check()),
+          h("div", { class: "complete-copy" },
+            h("p", { class: "mission-label" }, `Case closed · ${c.ticket}`),
+            h("p", { class: "cause", html: `<b>What was wrong:</b> ${c.cause}` }),
+            h("div", { class: "complete-actions" },
+              h("button", { class: "cta small", type: "button", onclick: () => go({ screen: "case", id: next.id }) }, h("span", {}, "Next case"), h("small", {}, next.title), icon.arrow()),
+              h("button", { class: "cta small alt", type: "button", onclick: () => { cs = freshCase(c, cs); go({ screen: "case", id: c.id }); } }, h("span", {}, "Try again"), h("small", {}, "Fresh broken setup"), icon.reset()))));
+      } else {
+        status.replaceChildren(
+          h("div", { class: "mission-top" },
+            h("span", { class: "mission-label" }, h("i", { class: "live-dot" }), `Open · ${c.ticket}`),
+            h("button", { class: "ghost", type: "button", onclick: () => { if (confirm("Reset this case to its broken starting point?")) { cs = freshCase(c, cs); go({ screen: "case", id: c.id }); } } }, icon.reset(), "Reset case")),
+          h("p", { class: "goal" }, c.title),
+          h("p", { class: "case-howto" }, "Investigate and fix it in the terminal. The case is checked after every command."),
+          failMsg ? h("p", { class: "case-fail" }, "⚠️ ", failMsg) : null);
+      }
+      if (flash) setTimeout(() => status.classList.remove("flash"), 900);
+    }
+
+    function onCommand(line) {
+      const r = Sim.exec(cs.sim, line);
+      if (r.clear) { term.clear(); save(); return; }
+      term.print(r.lines);
+      if (!cs.solved) {
+        let ok = false;
+        try { ok = !!c.check(cs.sim); } catch { ok = false; }
+        if (ok) {
+          cs.solved = true;
+          cs.everSolved = true;
+          term.print([{ t: `✓ Case ${c.ticket} closed. Nice detective work.`, c: "win" }]);
+          paintStatus(true);
+        } else if (c.fail && c.fail(cs.sim)) paintStatus(false);
+      }
+      term.setPrompt(Sim.prompt(cs.sim));
+      save();
+    }
+
+    term.print([{ t: `Ticket ${c.ticket} opened: "${c.title}". Type "help" any time.`, c: "dim" }]);
+    term.setPrompt(Sim.prompt(cs.sim));
+    term.setHistory(cs.sim.history);
+    paintClues();
+    paintStatus(false);
+    term.focus();
+  }
+
   // ------------------------------------------------------------ boot
   function render() {
     updateTop();
     document.body.dataset.screen = state.view.screen;
     if (state.view.screen === "lesson") renderLesson();
     else if (state.view.screen === "module") renderModule();
+    else if (state.view.screen === "cases") renderCases();
+    else if (state.view.screen === "case") renderCase();
     else renderHome();
   }
   render();

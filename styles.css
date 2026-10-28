@@ -649,8 +649,89 @@ body.modal-open { overflow: hidden; }
 .ki-dots button.on { width: 26px; background: var(--orange); }
 .intro-btn { margin-top: 14px; font-size: 14px; padding: 8px 14px; }
 
+/* ============================================================ case files */
+.cases-link {
+  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 11px; background: var(--surface); cursor: pointer;
+  font: 700 13px var(--body); white-space: nowrap; transition: border-color .2s, transform .2s;
+}
+.cases-link:hover { border-color: var(--ink); transform: translateY(-1px); }
+.case-teaser { margin-top: 46px; }
+.case-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.casecard {
+  --pc: var(--yellow);
+  position: relative; overflow: hidden; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 14px 18px;
+  border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow);
+  opacity: 0; animation: rise .5s cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: var(--d);
+  transition: transform .25s cubic-bezier(.2, .8, .2, 1), border-color .25s;
+}
+.casecard::before { /* ticket edge with punched holes */
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--pc);
+  -webkit-mask: radial-gradient(circle at 6px 8px, transparent 3px, #000 3.5px) 0 0 / 6px 16px repeat-y;
+  mask: radial-gradient(circle at 6px 8px, transparent 3px, #000 3.5px) 0 0 / 6px 16px repeat-y;
+}
+.casecard:hover { transform: translateY(-4px) rotate(-.4deg); border-color: var(--pc); }
+.pr-p1 { --pc: var(--red); }
+.pr-p2 { --pc: var(--yellow); }
+.case-top, .ticket-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.case-id { font: 700 12px var(--mono); color: var(--muted); letter-spacing: .04em; }
+.case-pri { font: 800 11px var(--mono); padding: 2px 7px; border-radius: 5px; color: #fff; background: var(--pc, var(--yellow)); }
+.case-level { font: 600 11px var(--body); padding: 2px 8px; border-radius: 99px; background: var(--bg-2); color: var(--ink-2); margin-left: auto; }
+.casecard h3 { margin: 4px 0 0; font: 800 22px/1.02 var(--display); text-transform: uppercase; }
+.case-from { margin: 0; font: 500 13px var(--body); color: var(--muted); }
+.case-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; margin-top: auto; padding-top: 8px; }
+.case-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.case-tags code { font-size: 11px; padding: 1px 6px; }
+.case-tags.big code { font-size: 13px; padding: 3px 9px; color: var(--ink); }
+.chip.s-open { background: color-mix(in srgb, var(--pc, var(--yellow)) 16%, transparent); color: color-mix(in srgb, var(--pc, var(--yellow)) 80%, var(--ink)); }
+.case-stamp {
+  position: absolute; right: -6px; top: 34px; transform: rotate(12deg);
+  font: 900 26px var(--display); text-transform: uppercase; letter-spacing: .06em;
+  color: color-mix(in srgb, var(--ok) 70%, transparent); border: 3px solid currentColor; border-radius: 8px; padding: 0 8px;
+  pointer-events: none; opacity: .75;
+}
+.casecard.solved h3 { color: var(--muted); }
+
+.cases-page { max-width: 1180px; margin: 0 auto; padding: 22px 20px 64px; animation: slideL .4s cubic-bezier(.2, .8, .2, 1); }
+.cases-hero { margin: 18px 0 26px; max-width: 760px; }
+.cases-hero h1 { font: 900 clamp(48px, 8vw, 88px)/.9 var(--display); text-transform: uppercase; margin: 0; }
+.cases-hero .hero-sub { margin: 14px 0 10px; }
+.cases-count { margin: 0; font: 500 14px var(--mono); color: var(--muted); }
+.cases-count b { color: var(--ink); font-size: 18px; }
+
+/* case screen */
+.case-info { --c: var(--red); }
+.case-info .ticket-head { margin: 18px 0 2px; }
+.case-info .case-pri { --pc: var(--red); }
+.case-info .case-pri.pr-p2 { --pc: var(--yellow); }
+.case-info .lesson-title { margin-top: 10px; }
+.case-info .case-from { margin-bottom: 10px; }
+.symptoms { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 15px; color: var(--ink-2); }
+.symptoms code { white-space: normal; }
+.clues { display: grid; gap: 8px; }
+.clue { padding: 10px 12px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); animation: typeIn .35s ease; }
+.clue span { font: 700 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.clue p { margin: 2px 0 0; font-size: 14.5px; }
+.clue p code { white-space: normal; }
+.clue.fix { background: var(--term-bg); border-color: transparent; display: grid; gap: 6px; }
+.clue.fix span { color: var(--term-user); }
+.clue.fix code { background: transparent; border: 0; color: #fff; padding: 0; white-space: pre-wrap; font-size: 13px; }
+.clue.fix code::before { content: "$ "; color: var(--term-dim); }
+.clues .ghost { justify-self: start; }
+.case-status { --c: var(--red); }
+.case-status.pr-p2 { --c: var(--yellow); }
+.case-status .mission-top .ghost { display: inline-flex; align-items: center; gap: 6px; }
+.live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 8px; vertical-align: 1px; box-shadow: 0 0 0 0 var(--c); animation: live 1.6s ease-out infinite; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+.case-howto { margin: 0; font-size: 14px; color: var(--muted); }
+.case-fail { margin: 10px 0 0; padding: 8px 12px; border-radius: 9px; background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); font-weight: 600; font-size: 14px; }
+.cause { margin: 4px 0 12px; font-size: 15px; color: var(--ink-2); }
+.cause code { white-space: normal; }
+
 /* ============================================================ responsive */
 @media (max-width: 1000px) {
+  .case-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero { grid-template-columns: 1fr; gap: 36px; }
   .hero-term { transform: none; }
   .yard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -665,6 +746,9 @@ body.modal-open { overflow: hidden; }
   .term-input { font-size: 16px; }
 }
 @media (max-width: 620px) {
+  .case-grid { grid-template-columns: minmax(0, 1fr); }
+  .cases-link { padding: 0 10px; font-size: 0; gap: 0; }
+  .cases-link span { font-size: 17px; }
   .ki-stage { height: 230px; }
   .kbox { --bw: 96px; --bh: 62px; }
   .sc2 .browser { width: 130px; right: 4%; }

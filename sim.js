@@ -22,6 +22,10 @@
     "busybox:latest": { size: "4.27MB", mb: 4.27, kind: "shell" },
     "ubuntu:latest": { size: "78.1MB", mb: 78.1, kind: "shell" },
     "ubuntu:24.04": { size: "78.1MB", mb: 78.1, kind: "shell" },
+    // images used by case studies
+    "shop/web:1.0": { size: "54.1MB", mb: 54.1, kind: "nginx" },
+    "shop/web:2.0": { size: "54.3MB", mb: 54.3, kind: "nginx" },
+    "shop/api:1.0": { size: "168MB", mb: 168, kind: "api" },
   };
 
   const FILES = {
@@ -292,10 +296,38 @@ volumes:
   }
 
   // ---------------------------------------------------------------- docker: containers
-  const longRunning = (kind) => ["nginx", "redis", "mysql", "postgres", "app", "node"].includes(kind);
+  const longRunning = (kind) => ["nginx", "redis", "mysql", "postgres", "app", "node", "api"].includes(kind);
+  const LISTEN = { nginx: 80, app: 3000, api: 3000, redis: 6379, mysql: 3306, postgres: 5432 };
+  const netsOf = (c) => [c.network, ...(c.extraNets || [])];
+  const sharesNet = (a, b) => netsOf(a).some((n) => n !== "bridge" && n !== "host" && n !== "none" && netsOf(b).includes(n));
+  const envOf = (c, k) => { const e = (c.env || []).find((x) => x.startsWith(k + "=")); return e ? e.slice(k.length + 1) : null; };
+
+  // Start a long-running container. Some images refuse to start without the right
+  // settings, like the real ones do; then the container exits with code 1 and its logs say why.
+  function boot(E, c) {
+    c.crash = null;
+    if (c.kind === "mysql" && !envOf(c, "MYSQL_ROOT_PASSWORD") && !envOf(c, "MYSQL_ALLOW_EMPTY_PASSWORD") && !envOf(c, "MYSQL_RANDOM_ROOT_PASSWORD"))
+      c.crash = `2026-10-28 10:00:00+00:00 [Note] [Entrypoint]: Entrypoint script for MySQL Server 8.4.3-1.el9 started.\n2026-10-28 10:00:00+00:00 [ERROR] [Entrypoint]: Database is uninitialized and password option is not specified\n    You need to specify one of the following as an environment variable:\n    - MYSQL_ROOT_PASSWORD\n    - MYSQL_ALLOW_EMPTY_PASSWORD\n    - MYSQL_RANDOM_ROOT_PASSWORD`;
+    if (c.kind === "postgres" && !envOf(c, "POSTGRES_PASSWORD") && envOf(c, "POSTGRES_HOST_AUTH_METHOD") !== "trust")
+      c.crash = `Error: Database is uninitialized and superuser password is not specified.\n       You must specify POSTGRES_PASSWORD to a non-empty value for the\n       superuser. For example, "-e POSTGRES_PASSWORD=password" on "docker run".`;
+    if (c.kind === "api") {
+      const host = envOf(c, "DB_HOST");
+      const head = `> shop-api@1.0.0 start\n> node index.js\n\n`;
+      if (!host) c.crash = head + `Error: DB_HOST is not set`;
+      else if (host === "localhost" || host === "127.0.0.1")
+        c.crash = head + `Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1607:16) {\n  errno: -111,\n  code: 'ECONNREFUSED',\n  address: '127.0.0.1',\n  port: 5432\n}`;
+      else if (!E.containers.some((x) => x.name === host && x.status === "running" && x.kind === "postgres" && sharesNet(c, x)))
+        c.crash = head + `Error: getaddrinfo ENOTFOUND ${host}\n    at GetAddrInfoReqWrap.onlookup [as oncomplete] (node:dns:109:26) {\n  code: 'ENOTFOUND',\n  hostname: '${host}'\n}`;
+    }
+    if (c.crash) { c.status = "exited"; c.exitCode = 1; c.finished = now(); return false; }
+    c.status = "running"; c.exitCode = 0; c.started = now();
+    return true;
+  }
 
   function startupLogs(c) {
+    if (c.crash) return c.crash;
     switch (c.kind) {
+      case "api": return `> shop-api@1.0.0 start\n> node index.js\n\nConnected to postgres at ${envOf(c, "DB_HOST")}:5432\nAPI listening on port 3000`;
       case "nginx": return `/docker-entrypoint.sh: Configuration complete; ready for start up\n2026/10/28 10:00:00 [notice] 1#1: nginx/1.27.2\n2026/10/28 10:00:00 [notice] 1#1: start worker processes`;
       case "redis": return `1:C 28 Oct 2026 10:00:00.000 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo\n1:M 28 Oct 2026 10:00:00.001 * Ready to accept connections tcp`;
       case "mysql": return `[System] [MY-010116] [Server] /usr/sbin/mysqld (mysqld 8.4.3) starting as process 1\n[System] [MY-010931] [Server] /usr/sbin/mysqld: ready for connections. Version: '8.4.3'  port: 3306`;
@@ -402,7 +434,7 @@ To generate this message, Docker took the following steps:
     if (kind === "redis" && cmd[0] === "redis-cli") {
       const hIdx = cmd.indexOf("-h");
       const target = hIdx > -1 ? cmd[hIdx + 1] : "127.0.0.1";
-      const peer = E.containers.find((x) => x.name === target && x.status === "running" && x.kind === "redis" && x.network === c.network && c.network !== "bridge");
+      const peer = E.containers.find((x) => x.name === target && x.status === "running" && x.kind === "redis" && sharesNet(c, x));
       if (cmd.includes("ping") && peer) o.good("PONG");
       else if (target === "127.0.0.1" || target === "localhost") o.err(`Could not connect to Redis at 127.0.0.1:6379: Connection refused\n(inside a container, localhost means the container itself)`);
       else o.err(`Could not connect to Redis at ${target}:6379: Name or service not known` + (c.network === "bridge" ? `\n(hint: containers find each other by name only on a user-made network: --network ...)` : ""));
@@ -419,10 +451,13 @@ To generate this message, Docker took the following steps:
     }
 
     // Long-running service
-    c.status = "running";
-    c.started = now();
+    const up = boot(E, c);
     if (flags.detach) {
       o.say(c.id + hex(52));
+      if (!up && flags.rm) E.containers = E.containers.filter((x) => x !== c);
+    } else if (!up) {
+      o.say(c.crash);
+      if (flags.rm) E.containers = E.containers.filter((x) => x !== c);
     } else {
       o.say(startupLogs(c));
       o.note(`\n(you'd be stuck here watching logs. Pressing Ctrl+C stops the container.\n Use -d to run it in the background instead.)`);
@@ -491,7 +526,7 @@ To generate this message, Docker took the following steps:
       if (c.status !== "running") {
         const clash = c.ports.find((p) => E.containers.some((x) => x !== c && x.status === "running" && x.ports.some((q) => q.host === p.host)));
         if (clash) { o.err(`Error response from daemon: driver failed programming external connectivity on endpoint ${c.name}: Bind for 0.0.0.0:${clash.host} failed: port is already allocated\nError: failed to start containers: ${a}`); continue; }
-        if (longRunning(c.kind) && !c.cmd.length) { c.status = "running"; c.started = now(); }
+        if (longRunning(c.kind) && !c.cmd.length) boot(E, c);
         else { c.status = "exited"; c.finished = now(); }
       }
       o.say(a);
@@ -502,7 +537,7 @@ To generate this message, Docker took the following steps:
     for (const a of args) {
       const c = findContainer(E, a);
       if (!c) { o.err(`Error response from daemon: No such container: ${a}`); continue; }
-      if (longRunning(c.kind) && !c.cmd.length) { c.status = "running"; c.started = now(); }
+      if (longRunning(c.kind) && !c.cmd.length) boot(E, c);
       o.say(a);
     }
   }
@@ -565,7 +600,7 @@ To generate this message, Docker took the following steps:
         State: { Status: c.status, Running: c.status === "running", ExitCode: c.exitCode },
         HostConfig: { PortBindings: Object.fromEntries(c.ports.map((p) => [`${p.container}/tcp`, [{ HostPort: String(p.host) }]])), RestartPolicy: { Name: c.restart } },
         Mounts: c.mounts.map((m) => ({ Type: m.type, Source: m.source, Destination: m.target })),
-        Config: { Env: c.env }, NetworkSettings: { Networks: { [c.network]: {} } },
+        Config: { Env: c.env }, NetworkSettings: { Networks: Object.fromEntries(netsOf(c).map((n) => [n, {}])) },
       }], null, 2));
     }
     const ref = normRef(key);
@@ -622,7 +657,7 @@ To generate this message, Docker took the following steps:
       for (const n of args) {
         if (!E.networks[n]) { o.err(`Error response from daemon: network ${n} not found`); continue; }
         if (E.networks[n].builtin) { o.err(`Error response from daemon: ${n} is a pre-defined network and cannot be removed`); continue; }
-        if (E.containers.some((c) => c.network === n && c.status === "running")) { o.err(`Error response from daemon: error while removing network: network ${n} id ${E.networks[n].id} has active endpoints`); continue; }
+        if (E.containers.some((c) => netsOf(c).includes(n) && c.status === "running")) { o.err(`Error response from daemon: error while removing network: network ${n} id ${E.networks[n].id} has active endpoints`); continue; }
         delete E.networks[n];
         o.say(n);
       }
@@ -631,9 +666,26 @@ To generate this message, Docker took the following steps:
     if (sub === "inspect") {
       const n = args[0];
       if (!E.networks[n]) return o.err(`Error response from daemon: network ${n} not found`);
-      return o.say(JSON.stringify([{ Name: n, Driver: E.networks[n].driver, Containers: Object.fromEntries(E.containers.filter((c) => c.network === n && c.status === "running").map((c) => [c.id, { Name: c.name }])) }], null, 2));
+      return o.say(JSON.stringify([{ Name: n, Driver: E.networks[n].driver, Containers: Object.fromEntries(E.containers.filter((c) => netsOf(c).includes(n) && c.status === "running").map((c) => [c.id, { Name: c.name }])) }], null, 2));
     }
-    o.say(`Usage:  docker network COMMAND\n\nCommands:\n  create   Create a network\n  inspect  Display detailed information on one or more networks\n  ls       List networks\n  rm       Remove one or more networks`);
+    if (sub === "connect" || sub === "disconnect") {
+      const [n, key] = args.filter((a) => !a.startsWith("-"));
+      if (!n || !key) return o.err(`"docker network ${sub}" requires exactly 2 arguments.\nUsage:  docker network ${sub} [OPTIONS] NETWORK CONTAINER`);
+      if (!E.networks[n]) return o.err(`Error response from daemon: network ${n} not found`);
+      const c = findContainer(E, key);
+      if (!c) return o.err(`Error response from daemon: No such container: ${key}`);
+      c.extraNets = c.extraNets || [];
+      if (sub === "connect") {
+        if (netsOf(c).includes(n)) return o.err(`Error response from daemon: endpoint with name ${c.name} already exists in network ${n}`);
+        c.extraNets.push(n);
+      } else {
+        if (!netsOf(c).includes(n)) return o.err(`Error response from daemon: container ${c.id} is not connected to network ${n}`);
+        if (c.network === n) c.network = c.extraNets.shift() || "none";
+        else c.extraNets = c.extraNets.filter((x) => x !== n);
+      }
+      return;
+    }
+    o.say(`Usage:  docker network COMMAND\n\nCommands:\n  connect     Connect a container to a network\n  create      Create a network\n  disconnect  Disconnect a container from a network\n  inspect     Display detailed information on one or more networks\n  ls          List networks\n  rm          Remove one or more networks`);
   }
 
   // ---------------------------------------------------------------- system / prune
@@ -666,7 +718,7 @@ To generate this message, Docker took the following steps:
   function doSystemPrune(E, o) {
     const stopped = E.containers.filter((c) => c.status !== "running");
     E.containers = E.containers.filter((c) => c.status === "running");
-    const nets = Object.keys(E.networks).filter((n) => !E.networks[n].builtin && !E.containers.some((c) => c.network === n));
+    const nets = Object.keys(E.networks).filter((n) => !E.networks[n].builtin && !E.containers.some((c) => netsOf(c).includes(n)));
     nets.forEach((n) => delete E.networks[n]);
     const dangling = Object.keys(E.images).filter((r) => r.startsWith("<none>"));
     dangling.forEach((r) => delete E.images[r]);
@@ -1166,6 +1218,9 @@ To generate this message, Docker took the following steps:
           const port = parseInt(url.match(/localhost:(\d+)/)[1], 10);
           const c = engine(S).containers.find((x) => x.status === "running" && x.ports.some((p) => p.host === port));
           if (!c) return o.err(`curl: (7) Failed to connect to localhost port ${port} after 0 ms: Couldn't connect to server`);
+          const mapped = c.ports.find((p) => p.host === port);
+          if (LISTEN[c.kind] && mapped.container !== LISTEN[c.kind]) return o.err(`curl: (56) Recv failure: Connection reset by peer`);
+          if (c.kind === "api") return o.say(`{"status":"ok","orders":1284}`);
           if (c.kind === "nginx") return o.say(`<!DOCTYPE html>\n<html>\n<head>\n<title>Welcome to nginx!</title>\n...`);
           if (c.kind === "app") return o.say("Hello from a container!");
           return o.say("(connected)");
@@ -1225,7 +1280,7 @@ To generate this message, Docker took the following steps:
 
   window.Sim = {
     createState, exec, tokenize, normRef, engine,
-    findContainer, CATALOG,
+    findContainer, CATALOG, netsOf,
     prompt(S) { return S.host === "local" ? { user: "you@laptop", path: "~/app" } : { user: "deploy@my-vps", path: "~" }; },
     ensureImage(S, ref, host = "local") {
       const E = S.hosts[host];

@@ -33,6 +33,23 @@ Docker → Compose → deploying to a server → Kubernetes, as **58 missions** 
 
 ![Kubernetes lesson in dark mode](docs/kubernetes-dark.png)
 
+## Case files
+
+Real problems, no step-by-step. Open any time, no module needs to be finished first.
+
+Each case is a support ticket plus a broken sandbox. Investigate with the commands from the course, fix it, and the case closes itself (checked after every command). Stuck? Clues unlock one at a time, the last one is the full fix, and every case links to the docs.
+
+| Ticket | Case | Skills |
+|---|---|---|
+| INC-1041 | The new version won't start | ports, `ps`, `rm` |
+| INC-1042 | It's running, but nobody can open it | port mapping, `curl` |
+| INC-1043 | The database keeps stopping | `logs`, `-e` |
+| INC-1044 | Every deploy deletes our orders | volumes |
+| INC-1045 | The API can't reach the database | networks, `logs`, `-e` |
+| INC-1046 | Server disk at 97% | `system df`, `prune` (without deleting the backups!) |
+| INC-1047 | Friday deploy broke production | `kubectl describe`, `rollout undo` |
+| INC-1048 | Black Friday traffic is coming | `kubectl scale`, `expose` |
+
 ## Tech
 
 Plain HTML, CSS and JavaScript. No build step, no dependencies, no backend.
@@ -43,6 +60,7 @@ Plain HTML, CSS and JavaScript. No build step, no dependencies, no backend.
 | `styles.css` | Theme, layout, intro animations |
 | `sim.js` | The fake Docker / Compose / kubectl engine |
 | `course.js` | Modules, lessons, missions and their checks |
+| `cases.js` | Case studies: ticket, broken setup, check, clues, references |
 | `app.js` | UI: home, module overview, lesson + terminal, intro modal |
 
 ## Run locally
